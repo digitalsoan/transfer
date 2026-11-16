@@ -1085,7 +1085,7 @@
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
           <h1>LocalShare</h1>
-          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.3 Turbo</span></p>
+          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.4 Resumable</span></p>
         </div>
       </div>
       <div class="header-actions">
@@ -1209,6 +1209,9 @@
           <span id="progressTransferInfo">0 MB / 0 MB</span>
           <span id="progressSpeed">0.0 MB/s</span>
           <span id="progressEta">Calculating...</span>
+        </div>
+        <div id="progressWakeLockHint" style="display:none; font-size:0.75rem; color:var(--accent); text-align:center; margin-top:0.35rem; padding:0.25rem 0.5rem; background:rgba(52,199,89,0.1); border-radius:6px;">
+          <span>💡</span> Screen kept awake • Resumable stream active
         </div>
       </div>
 
@@ -1391,6 +1394,12 @@
     let discoveredDevices = {}; // deviceId -> { id, peerId, pin, name, os, type, icon, ip, lastSeen }
     let peer = null;
     let peerConnections = {}; // peerId -> { conn, name, os, type, icon }
+    let activeIncomingTransfers = {}; // transferId -> { meta, chunks, receivedBytes, startTime, lastSampleTime, lastSampleBytes, currentSpeedMBps, lastUiTime, lastChunkTime }
+    let incomingTransferId = null;
+    let isTransferring = false;
+    let wakeLock = null;
+    let keepAliveAudioCtx = null;
+    let keepAliveOsc = null;
 
     // DOM Elements
     const networkBanner = document.getElementById('networkBanner');
@@ -1419,6 +1428,7 @@
     const progressTransferInfo = document.getElementById('progressTransferInfo');
     const progressSpeed = document.getElementById('progressSpeed');
     const progressEta = document.getElementById('progressEta');
+    const progressWakeLockHint = document.getElementById('progressWakeLockHint');
 
     const fileGrid = document.getElementById('fileGrid');
     const emptyState = document.getElementById('emptyState');
@@ -1471,6 +1481,89 @@
         osc.stop(ctx.currentTime + 0.4);
       } catch (e) {}
     }
+
+    // Screen Wake Lock API to prevent mobile screen from sleeping during file transfer
+    async function acquireWakeLock() {
+      try {
+        if ('wakeLock' in navigator && !wakeLock) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => {
+            wakeLock = null;
+          });
+        }
+      } catch (e) {
+        console.warn('Wake Lock error:', e);
+      }
+    }
+
+    function releaseWakeLock() {
+      if (wakeLock) {
+        try {
+          wakeLock.release();
+        } catch (e) {}
+        wakeLock = null;
+      }
+    }
+
+    // Background Audio Session Keep-Alive (keeps iOS Safari WebRTC thread active)
+    function startSilentKeepAliveAudio() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        if (!keepAliveAudioCtx) {
+          keepAliveAudioCtx = new AudioCtx();
+        }
+        if (keepAliveAudioCtx.state === 'suspended') {
+          keepAliveAudioCtx.resume();
+        }
+        if (!keepAliveOsc) {
+          keepAliveOsc = keepAliveAudioCtx.createOscillator();
+          const gain = keepAliveAudioCtx.createGain();
+          gain.gain.value = 0.0001; // virtually silent / inaudible
+          keepAliveOsc.frequency.setValueAtTime(30, keepAliveAudioCtx.currentTime);
+          keepAliveOsc.connect(gain);
+          gain.connect(keepAliveAudioCtx.destination);
+          keepAliveOsc.start();
+        }
+      } catch (e) {
+        console.warn('Audio keepalive error:', e);
+      }
+    }
+
+    function stopSilentKeepAliveAudio() {
+      try {
+        if (keepAliveOsc) {
+          keepAliveOsc.stop();
+          keepAliveOsc.disconnect();
+          keepAliveOsc = null;
+        }
+        if (keepAliveAudioCtx && keepAliveAudioCtx.state === 'running') {
+          keepAliveAudioCtx.suspend();
+        }
+      } catch (e) {}
+    }
+
+    // Auto-reacquire wake lock and reconnect if user wakes the phone
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        if (isTransferring) {
+          await acquireWakeLock();
+          startSilentKeepAliveAudio();
+        }
+        broadcastPresence('ping');
+      }
+    });
+
+    // Periodic receiver check for paused / stalled stream (e.g. phone went to sleep)
+    setInterval(() => {
+      if (incomingTransferId && activeIncomingTransfers[incomingTransferId]) {
+        const active = activeIncomingTransfers[incomingTransferId];
+        if (active.lastChunkTime && (Date.now() - active.lastChunkTime > 5000) && active.receivedBytes < active.meta.size) {
+          progressSpeed.textContent = '0.0 MB/s';
+          progressEta.textContent = '⚠️ Stream paused (Phone screen locked). Unlock phone to resume.';
+        }
+      }
+    }, 2000);
 
     function showToast(msg) {
       toast.textContent = msg;
@@ -1856,93 +1949,152 @@
             return;
           }
 
-          // 2. File metadata packet
-          if (packet && packet.type === 'file-meta') {
-            incomingFileMeta = packet;
-            incomingChunks = [];
-            receivedBytes = 0;
-            startTime = Date.now();
-            conn._lastSampleTime = startTime;
-            conn._lastSampleBytes = 0;
-            conn._currentSpeedMBps = 0;
-            conn._lastUiTime = 0;
-            uploadCard.style.display = 'flex';
-            progressFileName.textContent = `Receiving: ${packet.name}`;
-            progressBarFill.style.width = '0%';
-            progressPercent.textContent = '0%';
-            progressEta.textContent = 'Calculating...';
+          // 2. File resume query (sent by sender before starting a transfer)
+          if (packet && packet.type === 'file-resume-query') {
+            const tId = packet.transferId;
+            const existing = activeIncomingTransfers[tId];
+            const haveBytes = existing ? existing.receivedBytes : 0;
+            conn.send(JSON.stringify({
+              type: 'file-resume-info',
+              transferId: tId,
+              receivedBytes: haveBytes
+            }));
             return;
           }
 
-          // 3. File complete packet
-          if (packet && packet.type === 'file-complete' && incomingFileMeta) {
-            uploadCard.style.display = 'none';
+          // 3. File resume info (received by sender)
+          if (packet && packet.type === 'file-resume-info') {
+            if (conn._resumeResolver) {
+              conn._resumeResolver(packet.receivedBytes || 0);
+            }
+            return;
+          }
 
-            const mimeType = getMimeType(incomingFileMeta.name, incomingFileMeta.mime);
-            const blob = new Blob(incomingChunks, { type: mimeType });
-            const objectUrl = URL.createObjectURL(blob);
-            const ext = incomingFileMeta.name.split('.').pop().toLowerCase();
+          // 4. File metadata packet (received by receiver)
+          if (packet && packet.type === 'file-meta') {
+            const tId = packet.transferId || (packet.name + '_' + packet.size);
+            incomingTransferId = tId;
 
-            p2pReceivedFiles.unshift({
-              name: incomingFileMeta.name,
-              size: blob.size > 0 ? blob.size : incomingFileMeta.size,
-              mtime: Math.floor(Date.now() / 1000),
-              ext,
-              mime: mimeType,
-              isImage: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext),
-              isVideo: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext),
-              isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
-              isDoc: true,
-              blobUrl: objectUrl,
-              blobObj: blob
-            });
+            if (!activeIncomingTransfers[tId] || packet.startOffset === 0) {
+              activeIncomingTransfers[tId] = {
+                meta: packet,
+                chunks: [],
+                receivedBytes: 0,
+                startTime: Date.now(),
+                lastSampleTime: Date.now(),
+                lastSampleBytes: 0,
+                currentSpeedMBps: 0,
+                lastUiTime: 0,
+                lastChunkTime: Date.now()
+              };
+            } else {
+              // Resuming from partial state
+              activeIncomingTransfers[tId].meta = packet;
+              activeIncomingTransfers[tId].lastChunkTime = Date.now();
+              activeIncomingTransfers[tId].lastSampleTime = Date.now();
+              activeIncomingTransfers[tId].lastSampleBytes = activeIncomingTransfers[tId].receivedBytes;
+            }
 
-            playChime();
-            showToast(`Received ${incomingFileMeta.name}!`);
-            renderFiles();
-            incomingFileMeta = null;
-            incomingChunks = [];
+            const cur = activeIncomingTransfers[tId];
+            acquireWakeLock();
+            uploadCard.style.display = 'flex';
+            if (progressWakeLockHint) progressWakeLockHint.style.display = 'block';
+            progressFileName.textContent = `Receiving: ${packet.name}`;
+            const pct = Math.min(99, Math.round((cur.receivedBytes / packet.size) * 100));
+            progressBarFill.style.width = pct + '%';
+            progressPercent.textContent = pct + '%';
+            progressTransferInfo.textContent = `${formatBytes(cur.receivedBytes)} / ${formatBytes(packet.size)}`;
+            progressEta.textContent = cur.receivedBytes > 0 ? `Resuming from ${formatBytes(cur.receivedBytes)} (${pct}%)...` : 'Calculating...';
+            return;
+          }
+
+          // 5. File complete packet (received by receiver)
+          if (packet && packet.type === 'file-complete') {
+            const tId = packet.transferId || incomingTransferId;
+            const active = (tId && activeIncomingTransfers[tId]);
+
+            if (active && active.chunks.length > 0) {
+              uploadCard.style.display = 'none';
+              if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+
+              const mimeType = getMimeType(active.meta.name, active.meta.mime);
+              const blob = new Blob(active.chunks, { type: mimeType });
+              const objectUrl = URL.createObjectURL(blob);
+              const ext = active.meta.name.split('.').pop().toLowerCase();
+
+              p2pReceivedFiles.unshift({
+                name: active.meta.name,
+                size: blob.size > 0 ? blob.size : active.meta.size,
+                mtime: Math.floor(Date.now() / 1000),
+                ext,
+                mime: mimeType,
+                isImage: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext),
+                isVideo: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext),
+                isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
+                isDoc: true,
+                blobUrl: objectUrl,
+                blobObj: blob
+              });
+
+              playChime();
+              showToast(`Received ${active.meta.name}!`);
+              renderFiles();
+
+              // Send explicit ACK back to sender so sender can complete and show 100%
+              conn.send(JSON.stringify({
+                type: 'file-ack',
+                transferId: tId,
+                name: active.meta.name,
+                status: 'ok'
+              }));
+
+              delete activeIncomingTransfers[tId];
+              incomingTransferId = null;
+              releaseWakeLock();
+            }
+            return;
+          }
+
+          // 6. File ACK (received by sender)
+          if (packet && packet.type === 'file-ack') {
+            if (conn._ackResolver) {
+              conn._ackResolver(packet.transferId);
+            }
             return;
           }
         }
 
         // B. Raw Binary Chunks (ArrayBuffer / TypedArray)
-        if (incomingFileMeta) {
-          incomingChunks.push(data);
+        if (incomingTransferId && activeIncomingTransfers[incomingTransferId]) {
+          const active = activeIncomingTransfers[incomingTransferId];
+          active.chunks.push(data);
           const chunkSize = data.byteLength || data.size || (data.buffer ? data.buffer.byteLength : 0);
-          receivedBytes += chunkSize;
+          active.receivedBytes += chunkSize;
+          active.lastChunkTime = Date.now();
 
           const now = Date.now();
-          if (!conn._lastSampleTime) {
-            conn._lastSampleTime = now;
-            conn._lastSampleBytes = 0;
-            conn._currentSpeedMBps = 0;
-          }
-
-          // Rolling instantaneous speed calculation (every 500ms)
-          const timeDiff = (now - conn._lastSampleTime) / 1000;
+          const timeDiff = (now - active.lastSampleTime) / 1000;
           if (timeDiff >= 0.5) {
-            const bytesDiff = receivedBytes - conn._lastSampleBytes;
-            conn._currentSpeedMBps = (bytesDiff / timeDiff) / (1024 * 1024);
-            conn._lastSampleTime = now;
-            conn._lastSampleBytes = receivedBytes;
+            const bytesDiff = active.receivedBytes - active.lastSampleBytes;
+            active.currentSpeedMBps = (bytesDiff / timeDiff) / (1024 * 1024);
+            active.lastSampleTime = now;
+            active.lastSampleBytes = active.receivedBytes;
           }
 
-          // Throttled UI update (120ms) for high-speed throughput
-          if (now - (conn._lastUiTime || 0) > 120 || receivedBytes >= incomingFileMeta.size) {
-            conn._lastUiTime = now;
-            const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
+          if (now - (active.lastUiTime || 0) > 120 || active.receivedBytes >= active.meta.size) {
+            active.lastUiTime = now;
+            const percent = Math.min(100, Math.round((active.receivedBytes / active.meta.size) * 100));
             progressBarFill.style.width = percent + '%';
             progressPercent.textContent = percent + '%';
 
-            const speedDisplay = conn._currentSpeedMBps > 0 ? conn._currentSpeedMBps.toFixed(1) : ((receivedBytes / ((now - startTime) / 1000 || 1)) / (1024 * 1024)).toFixed(1);
-            progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
+            const speedDisplay = active.currentSpeedMBps > 0 ? active.currentSpeedMBps.toFixed(1) : ((active.receivedBytes / ((now - active.startTime) / 1000 || 1)) / (1024 * 1024)).toFixed(1);
+            progressTransferInfo.textContent = `${formatBytes(active.receivedBytes)} / ${formatBytes(active.meta.size)}`;
             progressSpeed.textContent = `${speedDisplay} MB/s`;
 
-            const remainingBytes = incomingFileMeta.size - receivedBytes;
+            const remainingBytes = active.meta.size - active.receivedBytes;
             const currentSpeedBps = (parseFloat(speedDisplay) || 1) * 1024 * 1024;
             const etaSec = currentSpeedBps > 0 ? Math.ceil(remainingBytes / currentSpeedBps) : 0;
-            progressEta.textContent = etaSec > 0 ? `${etaSec}s remaining` : 'Completing...';
+            progressEta.textContent = etaSec > 0 ? `${etaSec}s remaining` : 'Finalizing on PC...';
           }
         }
       });
@@ -1950,6 +2102,9 @@
       conn.on('close', () => {
         delete peerConnections[conn.peer];
         renderDevicesList();
+        if (incomingTransferId && activeIncomingTransfers[incomingTransferId]) {
+          progressEta.textContent = 'Connection paused. Ready to resume when reconnected.';
+        }
       });
 
       conn.on('error', (err) => {
@@ -2131,6 +2286,10 @@
       }
 
       uploadCard.style.display = 'none';
+      if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+      isTransferring = false;
+      releaseWakeLock();
+      stopSilentKeepAliveAudio();
       playChime();
       showToast('All files sent successfully!');
     }
@@ -2139,30 +2298,60 @@
       // 64 KB WebRTC wire chunks with 1 MB block disk buffering for maximum flash/memory performance
       const CHUNK_SIZE = 64 * 1024;
       const BLOCK_SIZE = 1024 * 1024;
+      const transferId = (file.name + '_' + file.size + '_' + (file.lastModified || 0)).replace(/[^a-zA-Z0-9_]/g, '_');
+
+      isTransferring = true;
+      await acquireWakeLock();
+      startSilentKeepAliveAudio();
+      if (progressWakeLockHint) progressWakeLockHint.style.display = 'block';
 
       progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
       progressBarFill.style.width = '0%';
       progressPercent.textContent = '0%';
-      progressEta.textContent = 'Starting...';
+      progressEta.textContent = 'Checking resume status...';
 
       const mimeType = getMimeType(file.name, file.type);
 
-      // 1. Send metadata JSON string
+      // 1. Query if receiver already has partial chunks for this file (Resumable check)
+      let resumeOffset = 0;
+      if (conn && conn.open) {
+        conn.send(JSON.stringify({
+          type: 'file-resume-query',
+          transferId: transferId
+        }));
+
+        await new Promise(resolve => {
+          const t = setTimeout(() => resolve(), 600);
+          conn._resumeResolver = (offset) => {
+            clearTimeout(t);
+            resumeOffset = offset || 0;
+            resolve();
+          };
+        });
+      }
+
+      let fileOffset = (resumeOffset > 0 && resumeOffset < file.size) ? resumeOffset : 0;
+      if (fileOffset > 0) {
+        showToast(`Resuming ${file.name} from ${formatBytes(fileOffset)} (${Math.round(fileOffset / file.size * 100)}%)!`);
+      }
+
+      // 2. Send metadata JSON string with exact startOffset
       conn.send(JSON.stringify({
         type: 'file-meta',
+        transferId: transferId,
         name: file.name,
         size: file.size,
-        mime: mimeType
+        mime: mimeType,
+        startOffset: fileOffset
       }));
 
-      // Small 25ms pause to ensure receiver prepares buffer
-      await new Promise(r => setTimeout(r, 25));
+      // Small 30ms pause to ensure receiver prepares buffer
+      await new Promise(r => setTimeout(r, 30));
 
-      let fileOffset = 0;
       let lastSenderUiUpdate = 0;
       const startTime = Date.now();
       let lastSampleTime = startTime;
-      let lastSampleBytes = 0;
+      let lastSampleBytes = fileOffset;
       let currentSpeedMBps = 0;
 
       // Configure high-performance DataChannel threshold
@@ -2173,6 +2362,13 @@
       }
 
       while (fileOffset < file.size) {
+        // If connection dropped during sending
+        if (!conn || !conn.open || (conn.dataChannel && conn.dataChannel.readyState !== 'open')) {
+          showToast(`Transfer paused. Reconnect to resume from ${formatBytes(fileOffset)}.`);
+          progressEta.textContent = 'Transfer paused. Reconnecting...';
+          break;
+        }
+
         // Read 1 MB block from disk once (reduces mobile flash I/O by 16x)
         const blockEnd = Math.min(fileOffset + BLOCK_SIZE, file.size);
         const blockSlice = file.slice(fileOffset, blockEnd);
@@ -2180,6 +2376,8 @@
 
         let blockOffset = 0;
         while (blockOffset < blockBuffer.byteLength) {
+          if (!conn || !conn.open) break;
+
           // Event-driven backpressure: pause only when DataChannel buffer exceeds 4 MB
           if (conn.dataChannel && conn.dataChannel.bufferedAmount > 4 * 1024 * 1024) {
             await new Promise(resolve => {
@@ -2205,42 +2403,83 @@
           fileOffset += sendLen;
 
           const now = Date.now();
-          // Rolling speed calculation (500ms window)
+          // Accurate ON-WIRE delivered bytes (fileOffset minus data currently queued in local buffer)
+          const inFlightBuffer = (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0);
+          const deliveredBytes = Math.max(0, fileOffset - inFlightBuffer);
+
+          // Rolling speed calculation (500ms window) based on actual delivered bytes
           const timeDiff = (now - lastSampleTime) / 1000;
           if (timeDiff >= 0.5) {
-            const bytesDiff = fileOffset - lastSampleBytes;
+            const bytesDiff = deliveredBytes - lastSampleBytes;
             currentSpeedMBps = (bytesDiff / timeDiff) / (1024 * 1024);
             lastSampleTime = now;
-            lastSampleBytes = fileOffset;
+            lastSampleBytes = deliveredBytes;
           }
 
           // Throttled UI update (120ms) to eliminate browser DOM reflow bottleneck
           if (now - lastSenderUiUpdate > 120 || fileOffset >= file.size) {
             lastSenderUiUpdate = now;
-            const percent = Math.min(100, Math.round((fileOffset / file.size) * 100));
+            // Cap at 99% until buffer is completely drained and PC sends confirmation ACK!
+            const percent = Math.min(99, Math.round((deliveredBytes / file.size) * 100));
             progressBarFill.style.width = percent + '%';
             progressPercent.textContent = percent + '%';
 
-            const speedDisplay = currentSpeedMBps > 0 ? currentSpeedMBps.toFixed(1) : ((fileOffset / ((now - startTime) / 1000 || 1)) / (1024 * 1024)).toFixed(1);
-            progressTransferInfo.textContent = `${formatBytes(fileOffset)} / ${formatBytes(file.size)}`;
+            const speedDisplay = currentSpeedMBps > 0 ? currentSpeedMBps.toFixed(1) : ((deliveredBytes / ((now - startTime) / 1000 || 1)) / (1024 * 1024)).toFixed(1);
+            progressTransferInfo.textContent = `${formatBytes(deliveredBytes)} / ${formatBytes(file.size)}`;
             progressSpeed.textContent = `${speedDisplay} MB/s`;
 
-            const remainingBytes = file.size - fileOffset;
+            const remainingBytes = file.size - deliveredBytes;
             const currentSpeedBps = (parseFloat(speedDisplay) || 1) * 1024 * 1024;
             const etaSec = currentSpeedBps > 0 ? Math.ceil(remainingBytes / currentSpeedBps) : 0;
-            progressEta.textContent = etaSec > 0 ? `${etaSec}s remaining` : 'Completing...';
+            progressEta.textContent = etaSec > 0 ? `${etaSec}s remaining` : 'Flushing queue...';
           }
         }
       }
 
-      // Small pause before completion packet
-      await new Promise(r => setTimeout(r, 40));
+      // Step 3: DRAIN THE BUFFER! Wait until bufferedAmount reaches 0 before claiming 100%
+      if (fileOffset >= file.size) {
+        while (conn && conn.open && conn.dataChannel && conn.dataChannel.bufferedAmount > 0) {
+          const inFlight = conn.dataChannel.bufferedAmount;
+          const delivered = Math.max(0, file.size - inFlight);
+          const percent = Math.min(99, Math.round((delivered / file.size) * 100));
+          progressBarFill.style.width = percent + '%';
+          progressPercent.textContent = percent + '%';
+          progressTransferInfo.textContent = `${formatBytes(delivered)} / ${formatBytes(file.size)}`;
+          progressEta.textContent = 'Flushing network queue to PC...';
+          await new Promise(r => setTimeout(r, 60));
+        }
 
-      // 2. Send complete JSON string
-      conn.send(JSON.stringify({
-        type: 'file-complete',
-        name: file.name
-      }));
+        // Step 4: Send file-complete signal
+        conn.send(JSON.stringify({
+          type: 'file-complete',
+          transferId: transferId,
+          name: file.name
+        }));
+
+        // Step 5: Wait for receiver confirmation ACK!
+        progressEta.textContent = 'Verifying on PC...';
+        await new Promise(resolve => {
+          const t = setTimeout(() => resolve(), 8000); // 8s timeout fallback
+          conn._ackResolver = (ackId) => {
+            if (ackId === transferId) {
+              clearTimeout(t);
+              resolve();
+            }
+          };
+        });
+
+        // Step 6: Mark 100% DONE!
+        progressBarFill.style.width = '100%';
+        progressPercent.textContent = '100%';
+        progressTransferInfo.textContent = `${formatBytes(file.size)} / ${formatBytes(file.size)}`;
+        progressEta.textContent = 'Completed!';
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      isTransferring = false;
+      releaseWakeLock();
+      stopSilentKeepAliveAudio();
+      if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
     }
 
     // ==========================================================
