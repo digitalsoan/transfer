@@ -7,12 +7,12 @@ Local high-speed file transfer web app to send and receive photos, 4K videos, do
 ## 🚀 Quick Start (In 5 Seconds)
 
 1. **Connect both devices to the same Wi-Fi**:
-   - Make sure your PC and iPhone are connected to the same Wi-Fi router (e.g., **`Airtel_DGson`**).
+   - Make sure your PC and iPhone are connected to the same Wi-Fi router (e.g., **`mywifi`**).
 2. **Start the Server on PC**:
-   - Double-click **`start_share.bat`** in `E:\` (or run `php -S 0.0.0.0:8080 share_server.php`).
+   - Double-click **`start_share.bat`** in `D:\` (or run `php -S 0.0.0.0:8080 share_server.php`).
    - Your PC browser will automatically open `http://localhost:8080`.
-3. **Open on iPhone**:
-   - Open **Safari** on your iPhone and type:
+3. **Open on iPhone or Android**:
+   - Open **Safari** on your iPhone or Open **Chrome** on your Android device and type:
      ```
      http://192.168.1.4:8080
      ```
@@ -31,7 +31,7 @@ Local high-speed file transfer web app to send and receive photos, 4K videos, do
 - **PC Drag & Drop**: Drop files directly onto the browser window.
 - **Chunked Fast Uploads**: Slices files into 4MB chunks to handle multi-gigabyte video files with 0 memory crash.
 - **iOS Safari Video Streaming**: Full HTTP Range support (`206 Partial Content`) for instant video playback and seeking.
-- **Shared Folder on PC**: All received files are stored directly in `E:\shared_files\`.
+- **Shared Folder on PC**: All received files are stored directly in `D:\shared_files\`.
 - **Shared Notes / Clipboard**: Copy-paste Wi-Fi passwords, links, or text between PC and iPhone instantly.
 
 ---
