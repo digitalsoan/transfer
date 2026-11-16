@@ -24,6 +24,10 @@
     return !!(peer && peer.open);
   }
 
+  function hasActiveConnections() {
+    return Object.values(peerConnections).some(p => p.conn && p.conn.open);
+  }
+
   // 1. PeerJS Lifecycle
   function initPeer() {
     if (peer) return;
@@ -359,6 +363,7 @@
     waitForAutoReconnect,
     getPeerConnections,
     isPeerConnected,
+    hasActiveConnections,
     isReady
   };
 

@@ -80,7 +80,7 @@
     }
 
     if (targets.length === 0) {
-      window.LS.ui.showToast("Waiting for friend device to connect! Open page on iPhone.");
+      window.LS.ui.showToast("Waiting for friend device to connect! Please ensure friend is online at transfer.digitalsoan.com.");
       return;
     }
 

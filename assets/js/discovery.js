@@ -244,6 +244,9 @@
     startNetworkDiscovery,
     broadcastPresence,
     getDiscoveredDevices,
+    get discoveredDevices() {
+      return discoveredDevices;
+    },
     getMyPublicIp,
     isConnected
   };

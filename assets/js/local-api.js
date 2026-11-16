@@ -166,12 +166,12 @@
     const progressPercent = document.getElementById('progressPercent');
     const progressTransferInfo = document.getElementById('progressTransferInfo');
     const progressSpeed = document.getElementById('progressSpeed');
-    const progressStatusText = document.getElementById('progressStatusText');
+    const progressEta = document.getElementById('progressEta');
 
     if (progressFileName) progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
     if (progressBarFill) progressBarFill.style.width = '0%';
     if (progressPercent) progressPercent.textContent = '0%';
-    if (progressStatusText) progressStatusText.textContent = '';
+    if (progressEta) progressEta.textContent = 'Uploading to PC...';
 
     let bytesUploaded = 0;
     const startTime = Date.now();
