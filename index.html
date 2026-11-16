@@ -1907,17 +1907,37 @@
           const chunkSize = data.byteLength || data.size || (data.buffer ? data.buffer.byteLength : 0);
           receivedBytes += chunkSize;
 
-          // Throttled UI update (120ms) for high-speed throughput (up to 30-60 MB/s)
           const now = Date.now();
-          if (now - startTime > 0 && (now - (conn._lastUiTime || 0) > 120 || receivedBytes >= incomingFileMeta.size)) {
+          if (!conn._lastSampleTime) {
+            conn._lastSampleTime = now;
+            conn._lastSampleBytes = 0;
+            conn._currentSpeedMBps = 0;
+          }
+
+          // Rolling instantaneous speed calculation (every 500ms)
+          const timeDiff = (now - conn._lastSampleTime) / 1000;
+          if (timeDiff >= 0.5) {
+            const bytesDiff = receivedBytes - conn._lastSampleBytes;
+            conn._currentSpeedMBps = (bytesDiff / timeDiff) / (1024 * 1024);
+            conn._lastSampleTime = now;
+            conn._lastSampleBytes = receivedBytes;
+          }
+
+          // Throttled UI update (120ms) for high-speed throughput
+          if (now - (conn._lastUiTime || 0) > 120 || receivedBytes >= incomingFileMeta.size) {
             conn._lastUiTime = now;
             const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
             progressBarFill.style.width = percent + '%';
             progressPercent.textContent = percent + '%';
-            const elapsedSec = (now - startTime) / 1000;
-            const speedBps = elapsedSec > 0 ? receivedBytes / elapsedSec : 0;
+
+            const speedDisplay = conn._currentSpeedMBps > 0 ? conn._currentSpeedMBps.toFixed(1) : ((receivedBytes / ((now - startTime) / 1000 || 1)) / (1024 * 1024)).toFixed(1);
             progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
-            progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+            progressSpeed.textContent = `${speedDisplay} MB/s`;
+
+            const remainingBytes = incomingFileMeta.size - receivedBytes;
+            const currentSpeedBps = (parseFloat(speedDisplay) || 1) * 1024 * 1024;
+            const etaSec = currentSpeedBps > 0 ? Math.ceil(remainingBytes / currentSpeedBps) : 0;
+            progressEta.textContent = etaSec > 0 ? `${etaSec}s remaining` : 'Completing...';
           }
         }
       });
@@ -2111,11 +2131,14 @@
     }
 
     async function sendSingleFileOverP2P(conn, file, currentIdx, totalFiles) {
-      // 64 KB WebRTC chunks for high-speed local transfer (30-60 MB/s)
-      const chunkSize = 64 * 1024;
+      // 64 KB WebRTC wire chunks with 512 KB block disk buffering for maximum flash/memory performance
+      const CHUNK_SIZE = 64 * 1024;
+      const BLOCK_SIZE = 512 * 1024;
+
       progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
       progressBarFill.style.width = '0%';
       progressPercent.textContent = '0%';
+      progressEta.textContent = 'Starting...';
 
       const mimeType = getMimeType(file.name, file.type);
 
@@ -2127,12 +2150,15 @@
         mime: mimeType
       }));
 
-      // Small 30ms pause to ensure receiver prepares buffer
-      await new Promise(r => setTimeout(r, 30));
+      // Small 25ms pause to ensure receiver prepares buffer
+      await new Promise(r => setTimeout(r, 25));
 
-      let offset = 0;
-      const startTime = Date.now();
+      let fileOffset = 0;
       let lastSenderUiUpdate = 0;
+      const startTime = Date.now();
+      let lastSampleTime = startTime;
+      let lastSampleBytes = 0;
+      let currentSpeedMBps = 0;
 
       // Configure high-performance DataChannel threshold
       if (conn.dataChannel) {
@@ -2141,43 +2167,64 @@
         } catch (e) {}
       }
 
-      while (offset < file.size) {
-        // High-speed event-driven backpressure:
-        // Only pause when buffer exceeds 1.5 MB, and resume immediately as soon as it drops!
-        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1.5 * 1024 * 1024) {
-          await new Promise(resolve => {
-            const onLow = () => {
-              conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
-              resolve();
-            };
-            conn.dataChannel.addEventListener('bufferedamountlow', onLow);
-            setTimeout(() => {
-              conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
-              resolve();
-            }, 6);
-          });
-        }
+      while (fileOffset < file.size) {
+        // Read 512 KB block from disk once (reduces mobile flash I/O by 8x)
+        const blockEnd = Math.min(fileOffset + BLOCK_SIZE, file.size);
+        const blockSlice = file.slice(fileOffset, blockEnd);
+        const blockBuffer = await blockSlice.arrayBuffer();
 
-        const slice = file.slice(offset, offset + chunkSize);
-        const buffer = await slice.arrayBuffer();
+        let blockOffset = 0;
+        while (blockOffset < blockBuffer.byteLength) {
+          // Event-driven backpressure: pause only when DataChannel buffer exceeds 2 MB
+          if (conn.dataChannel && conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
+            await new Promise(resolve => {
+              const onLow = () => {
+                conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                resolve();
+              };
+              conn.dataChannel.addEventListener('bufferedamountlow', onLow);
+              setTimeout(() => {
+                conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                resolve();
+              }, 5);
+            });
+          }
 
-        // Send raw ArrayBuffer directly over SCTP DataChannel
-        conn.send(buffer);
+          const sendLen = Math.min(CHUNK_SIZE, blockBuffer.byteLength - blockOffset);
+          const chunkBuf = blockBuffer.slice(blockOffset, blockOffset + sendLen);
 
-        offset += buffer.byteLength;
+          // Send raw ArrayBuffer directly over SCTP DataChannel
+          conn.send(chunkBuf);
 
-        // Throttled UI update (120ms) to eliminate browser DOM reflow bottleneck
-        const now = Date.now();
-        if (now - lastSenderUiUpdate > 120 || offset >= file.size) {
-          lastSenderUiUpdate = now;
-          const percent = Math.min(100, Math.round((offset / file.size) * 100));
-          progressBarFill.style.width = percent + '%';
-          progressPercent.textContent = percent + '%';
+          blockOffset += sendLen;
+          fileOffset += sendLen;
 
-          const elapsedSec = (now - startTime) / 1000;
-          const speedBps = elapsedSec > 0 ? offset / elapsedSec : 0;
-          progressTransferInfo.textContent = `${formatBytes(offset)} / ${formatBytes(file.size)}`;
-          progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+          const now = Date.now();
+          // Rolling speed calculation (500ms window)
+          const timeDiff = (now - lastSampleTime) / 1000;
+          if (timeDiff >= 0.5) {
+            const bytesDiff = fileOffset - lastSampleBytes;
+            currentSpeedMBps = (bytesDiff / timeDiff) / (1024 * 1024);
+            lastSampleTime = now;
+            lastSampleBytes = fileOffset;
+          }
+
+          // Throttled UI update (120ms) to eliminate browser DOM reflow bottleneck
+          if (now - lastSenderUiUpdate > 120 || fileOffset >= file.size) {
+            lastSenderUiUpdate = now;
+            const percent = Math.min(100, Math.round((fileOffset / file.size) * 100));
+            progressBarFill.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+
+            const speedDisplay = currentSpeedMBps > 0 ? currentSpeedMBps.toFixed(1) : ((fileOffset / ((now - startTime) / 1000 || 1)) / (1024 * 1024)).toFixed(1);
+            progressTransferInfo.textContent = `${formatBytes(fileOffset)} / ${formatBytes(file.size)}`;
+            progressSpeed.textContent = `${speedDisplay} MB/s`;
+
+            const remainingBytes = file.size - fileOffset;
+            const currentSpeedBps = (parseFloat(speedDisplay) || 1) * 1024 * 1024;
+            const etaSec = currentSpeedBps > 0 ? Math.ceil(remainingBytes / currentSpeedBps) : 0;
+            progressEta.textContent = etaSec > 0 ? `${etaSec}s remaining` : 'Completing...';
+          }
         }
       }
 
