@@ -1085,7 +1085,7 @@
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
           <h1>LocalShare</h1>
-          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery</p>
+          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.3 Turbo</span></p>
         </div>
       </div>
       <div class="header-actions">
@@ -1862,10 +1862,15 @@
             incomingChunks = [];
             receivedBytes = 0;
             startTime = Date.now();
+            conn._lastSampleTime = startTime;
+            conn._lastSampleBytes = 0;
+            conn._currentSpeedMBps = 0;
+            conn._lastUiTime = 0;
             uploadCard.style.display = 'flex';
             progressFileName.textContent = `Receiving: ${packet.name}`;
             progressBarFill.style.width = '0%';
             progressPercent.textContent = '0%';
+            progressEta.textContent = 'Calculating...';
             return;
           }
 
@@ -2131,9 +2136,9 @@
     }
 
     async function sendSingleFileOverP2P(conn, file, currentIdx, totalFiles) {
-      // 64 KB WebRTC wire chunks with 512 KB block disk buffering for maximum flash/memory performance
+      // 64 KB WebRTC wire chunks with 1 MB block disk buffering for maximum flash/memory performance
       const CHUNK_SIZE = 64 * 1024;
-      const BLOCK_SIZE = 512 * 1024;
+      const BLOCK_SIZE = 1024 * 1024;
 
       progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
       progressBarFill.style.width = '0%';
@@ -2163,20 +2168,20 @@
       // Configure high-performance DataChannel threshold
       if (conn.dataChannel) {
         try {
-          conn.dataChannel.bufferedAmountLowThreshold = 512 * 1024; // 512 KB
+          conn.dataChannel.bufferedAmountLowThreshold = 1024 * 1024; // 1 MB
         } catch (e) {}
       }
 
       while (fileOffset < file.size) {
-        // Read 512 KB block from disk once (reduces mobile flash I/O by 8x)
+        // Read 1 MB block from disk once (reduces mobile flash I/O by 16x)
         const blockEnd = Math.min(fileOffset + BLOCK_SIZE, file.size);
         const blockSlice = file.slice(fileOffset, blockEnd);
         const blockBuffer = await blockSlice.arrayBuffer();
 
         let blockOffset = 0;
         while (blockOffset < blockBuffer.byteLength) {
-          // Event-driven backpressure: pause only when DataChannel buffer exceeds 2 MB
-          if (conn.dataChannel && conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
+          // Event-driven backpressure: pause only when DataChannel buffer exceeds 4 MB
+          if (conn.dataChannel && conn.dataChannel.bufferedAmount > 4 * 1024 * 1024) {
             await new Promise(resolve => {
               const onLow = () => {
                 conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
@@ -2186,7 +2191,7 @@
               setTimeout(() => {
                 conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
                 resolve();
-              }, 5);
+              }, 10);
             });
           }
 
