@@ -1,6 +1,6 @@
-# LocalShare • Local Wi-Fi File Transfer (PC ⇄ iOS)
+# LocalShare • Local Wi-Fi File Transfer (PC ⇄ iOS/aOS)
 
-Local high-speed file transfer web app to send and receive photos, 4K videos, documents, and files between Windows PC and iPhone/iPad over local Wi-Fi without any external cloud or internet limits.
+Local high-speed file transfer web app to send and receive photos, 4K videos, documents, and files between Windows PC and iPhone/iPad/Android over local Wi-Fi without any external cloud or internet limits.
 
 ---
 
