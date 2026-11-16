@@ -30,7 +30,39 @@
     const cfg = window.LS.config;
 
     try {
-      peer = new Peer(cfg.myPeerId, { debug: 1 });
+      const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        // OpenRelay Public TURN servers for symmetric NAT, mobile networks & cross-ISP bypass
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ];
+
+      peer = new Peer(cfg.myPeerId, {
+        debug: 1,
+        config: {
+          iceServers,
+          iceCandidatePoolSize: 10
+        }
+      });
 
       peer.on('open', (id) => {
         console.log('[LS:P2P] PeerJS signaling connected with ID:', id);
@@ -79,8 +111,15 @@
 
   // 2. Outgoing WebRTC Connection
   function connectToPeer(targetPeerId, isManual = false) {
-    if (!peer || !targetPeerId) return;
+    if (!targetPeerId) return;
     const cfg = window.LS.config;
+
+    if (!peer || !peer.open) {
+      if (isManual) window.LS.ui.showToast("Waking connection engine... retrying in 2 seconds");
+      ensureSignalingAlive();
+      setTimeout(() => connectToPeer(targetPeerId, isManual), 1500);
+      return;
+    }
 
     if (targetPeerId === cfg.myPeerId) {
       if (isManual) window.LS.ui.showToast("Cannot connect to your own device PIN!");
@@ -91,7 +130,8 @@
       return;
     }
 
-    if (isManual) window.LS.ui.showToast("Connecting to friend device...");
+    const pinDigits = targetPeerId.replace('dsoan_', '');
+    if (isManual) window.LS.ui.showToast(`Connecting to friend PIN ${pinDigits}...`);
     console.log('[LS:P2P] Connecting to remote peer:', targetPeerId);
 
     const conn = peer.connect(targetPeerId, {
@@ -107,6 +147,14 @@
     });
 
     setupConnectionEvents(conn);
+
+    if (isManual) {
+      setTimeout(() => {
+        if (!isPeerConnected(targetPeerId)) {
+          window.LS.ui.showToast(`Still connecting to PIN ${pinDigits}... Ensure your friend is online at transfer.digitalsoan.com`);
+        }
+      }, 10000);
+    }
   }
 
   // 3. Auto-Pairing Throttle
@@ -275,9 +323,37 @@
     return null;
   }
 
+  // 7. Identity Broadcast to Active Peers
+  function broadcastIdentityUpdate() {
+    const cfg = window.LS.config;
+    const packet = JSON.stringify({
+      type: 'device-info',
+      name: cfg.myDeviceName,
+      os: cfg.myDeviceOs,
+      type: cfg.myDeviceType,
+      icon: cfg.myDeviceIcon,
+      pin: cfg.myShortPin
+    });
+
+    Object.values(peerConnections).forEach(p => {
+      if (p.conn && p.conn.open && p.conn.dataChannel && p.conn.dataChannel.readyState === 'open') {
+        try {
+          p.conn.send(packet);
+        } catch (e) {}
+      }
+    });
+
+    if (window.LS.discovery) {
+      window.LS.discovery.broadcastPresence('ping');
+    }
+  }
+
   window.LS.p2p = {
     initPeer,
+    initInternetPeer: initPeer,
     connectToPeer,
+    connectToRemotePeer: connectToPeer,
+    broadcastIdentityUpdate,
     tryAutoConnectPeer,
     ensureSignalingAlive,
     waitForAutoReconnect,

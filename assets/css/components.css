@@ -274,6 +274,24 @@
   color: var(--accent);
 }
 
+.btn-edit-device-name {
+  background: transparent;
+  border: none;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.btn-edit-device-name:hover {
+  background: var(--hover-bg);
+  transform: scale(1.15);
+}
+
 .device-meta {
   font-size: 0.725rem;
   color: var(--text-secondary);

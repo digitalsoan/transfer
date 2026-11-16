@@ -54,7 +54,18 @@
     savedName = null;
     localStorage.removeItem('localshare_device_name');
   }
-  const myDeviceName = savedName || myDefaultName;
+  let currentDeviceName = savedName || myDefaultName;
+
+  function setDeviceName(newName) {
+    if (!newName || !newName.trim()) return currentDeviceName;
+    const trimmed = newName.trim().substring(0, 32);
+    currentDeviceName = trimmed;
+    window.LS.config.myDeviceName = trimmed;
+    try {
+      localStorage.setItem('localshare_device_name', trimmed);
+    } catch (e) {}
+    return trimmed;
+  }
 
   // Persistent 4-digit PIN for device pairing
   let myShortPin = localStorage.getItem('localshare_pin');
@@ -123,7 +134,13 @@
     isMobileDevice,
     isLocalServerHost,
     myDeviceId,
-    myDeviceName,
+    get myDeviceName() {
+      return currentDeviceName;
+    },
+    set myDeviceName(val) {
+      currentDeviceName = val;
+    },
+    setDeviceName,
     myDeviceOs,
     myDeviceType,
     myDeviceIcon,

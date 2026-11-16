@@ -165,8 +165,11 @@
         </div>
         <div class="device-details">
           <div class="device-name-row">
-            <span class="device-name">${sanitizeHtml(cfg.myDeviceName)}</span>
+            <span class="device-name" id="myDeviceNameDisplay">${sanitizeHtml(cfg.myDeviceName)}</span>
             <span class="device-tag">(You)</span>
+            <button class="btn-edit-device-name" onclick="window.LS.ui.openDeviceNameModal()" title="Change Device Name">
+              ✏️
+            </button>
           </div>
           <div class="device-meta">
             <span>PIN: ${cfg.myShortPin}</span> • <span>This Device</span>
@@ -380,6 +383,40 @@
     if (modal) modal.style.display = 'none';
   }
 
+  // Device Name Editing Modal
+  function openDeviceNameModal() {
+    const modal = document.getElementById('deviceNameModal');
+    const input = document.getElementById('inputDeviceName');
+    if (!modal) return;
+    if (input) {
+      input.value = window.LS.config.myDeviceName || '';
+      setTimeout(() => input.focus(), 80);
+    }
+    modal.style.display = 'flex';
+  }
+
+  function closeDeviceNameModal() {
+    const modal = document.getElementById('deviceNameModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function saveDeviceNameFromInput() {
+    const input = document.getElementById('inputDeviceName');
+    if (!input) return;
+    const val = input.value.trim();
+    if (!val) {
+      showToast('Please enter a valid device name');
+      return;
+    }
+    const newName = window.LS.config.setDeviceName(val);
+    closeDeviceNameModal();
+    renderDevicesList();
+    if (window.LS.p2p && typeof window.LS.p2p.broadcastIdentityUpdate === 'function') {
+      window.LS.p2p.broadcastIdentityUpdate();
+    }
+    showToast(`Device name updated to "${newName}"`);
+  }
+
   window.LS.ui = {
     sanitizeHtml,
     formatBytes,
@@ -393,7 +430,10 @@
     openPreview,
     closePreview,
     openNotes,
-    closeNotes
+    closeNotes,
+    openDeviceNameModal,
+    closeDeviceNameModal,
+    saveDeviceNameFromInput
   };
 
 })(window);

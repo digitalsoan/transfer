@@ -147,13 +147,47 @@
     const btnJoinRoom = document.getElementById('btnJoinRoom');
     const joinRoomInput = document.getElementById('joinRoomInput');
     if (btnJoinRoom && joinRoomInput && p2p) {
-      btnJoinRoom.addEventListener('click', () => {
+      const handleJoin = () => {
         const pin = joinRoomInput.value.trim();
         if (!pin) {
           ui.showToast("Please enter friend's 4-digit PIN");
           return;
         }
-        p2p.connectToRemotePeer('dsoan_' + pin, true);
+        p2p.connectToPeer('dsoan_' + pin, true);
+      };
+
+      btnJoinRoom.addEventListener('click', handleJoin);
+      joinRoomInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleJoin();
+        }
+      });
+    }
+
+    // Device Name Edit Wiring
+    const btnSaveDeviceName = document.getElementById('btnSaveDeviceName');
+    const btnCloseDeviceName = document.getElementById('btnCloseDeviceName');
+    const inputDeviceName = document.getElementById('inputDeviceName');
+    const deviceNameModal = document.getElementById('deviceNameModal');
+
+    if (btnSaveDeviceName && ui) {
+      btnSaveDeviceName.addEventListener('click', ui.saveDeviceNameFromInput);
+    }
+    if (btnCloseDeviceName && ui) {
+      btnCloseDeviceName.addEventListener('click', ui.closeDeviceNameModal);
+    }
+    if (inputDeviceName && ui) {
+      inputDeviceName.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          ui.saveDeviceNameFromInput();
+        }
+      });
+    }
+    if (deviceNameModal && ui) {
+      deviceNameModal.addEventListener('click', (e) => {
+        if (e.target === deviceNameModal) ui.closeDeviceNameModal();
       });
     }
 
@@ -384,7 +418,7 @@
     if (ui) ui.renderDevicesList();
 
     // Initialize P2P Signaling & Network Discovery
-    if (p2p) p2p.initInternetPeer();
+    if (p2p) p2p.initPeer();
 
     // If hosted on offline desktop server
     if (cfg && cfg.isLocalServerHost && localApi) {

@@ -412,6 +412,28 @@
     </div>
   </div>
 
+  <!-- Edit Device Name Modal -->
+  <div class="modal-overlay" id="deviceNameModal">
+    <div class="modal-box" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title">Change Device Name</div>
+        <button class="btn-close" id="btnCloseDeviceName">&times;</button>
+      </div>
+      <div class="modal-body" style="gap: 0.85rem; align-items: stretch;">
+        <p style="font-size:0.8rem; color:var(--text-secondary);">
+          Set a custom name so your friend can easily identify you (e.g. <strong>Pranav PC</strong>, <strong>Office Laptop</strong>, <strong>Rahul Mac</strong>).
+        </p>
+        <input type="text" class="room-input" id="inputDeviceName" placeholder="Enter device name..." maxlength="32" style="width: 100%; text-align: left; padding: 0.65rem 0.85rem; font-family: var(--font-sans); font-size: 0.95rem;">
+      </div>
+      <div class="modal-footer">
+        <button class="btn-sm" onclick="document.getElementById('deviceNameModal').style.display='none'">Cancel</button>
+        <button class="btn-sm" id="btnSaveDeviceName" style="background:var(--primary); color:#ffffff; border-color:var(--primary);">
+          Save Name
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast" id="toast">Link copied to clipboard!</div>
 
