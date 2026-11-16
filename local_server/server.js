@@ -14,7 +14,8 @@ const os = require('os');
 const { exec } = require('child_process');
 
 const PORT = 8080;
-const SHARED_DIR = path.join(__dirname, 'shared_files');
+const ROOT_DIR = path.join(__dirname, '..');
+const SHARED_DIR = fs.existsSync(path.join(ROOT_DIR, 'index.html')) ? path.join(ROOT_DIR, 'shared_files') : path.join(__dirname, 'shared_files');
 const TEMP_DIR = path.join(SHARED_DIR, '.temp');
 const NOTES_FILE = path.join(SHARED_DIR, '.notes.txt');
 const DEVICES_FILE = path.join(TEMP_DIR, 'devices.json');
@@ -75,14 +76,20 @@ const server = http.createServer((req, res) => {
 
   // 1. UI
   if (pathname === '/' || pathname === '/index.html' || pathname === '/local_share.html') {
-    const htmlFile = path.join(__dirname, 'local_share.html');
-    if (fs.existsSync(htmlFile)) {
+    const candidateFiles = [
+      path.join(ROOT_DIR, 'index.html'),
+      path.join(__dirname, 'index.html'),
+      path.join(ROOT_DIR, 'local_share.html'),
+      path.join(__dirname, 'local_share.html')
+    ];
+    const htmlFile = candidateFiles.find(f => fs.existsSync(f));
+    if (htmlFile) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       fs.createReadStream(htmlFile).pipe(res);
       return;
     }
     res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('local_share.html not found');
+    res.end('index.html not found');
     return;
   }
 

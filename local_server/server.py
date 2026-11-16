@@ -20,7 +20,8 @@ import time
 
 PORT = 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SHARED_DIR = os.path.join(BASE_DIR, 'shared_files')
+ROOT_DIR = os.path.join(BASE_DIR, '..')
+SHARED_DIR = os.path.join(ROOT_DIR, 'shared_files') if os.path.exists(os.path.join(ROOT_DIR, 'index.html')) else os.path.join(BASE_DIR, 'shared_files')
 TEMP_DIR = os.path.join(SHARED_DIR, '.temp')
 NOTES_FILE = os.path.join(SHARED_DIR, '.notes.txt')
 DEVICES_FILE = os.path.join(TEMP_DIR, 'devices.json')
@@ -88,15 +89,21 @@ class LocalShareHandler(http.server.BaseHTTPRequestHandler):
 
         # 1. UI
         if path in ['/', '/index.html', '/local_share.html']:
-            html_file = os.path.join(BASE_DIR, 'local_share.html')
-            if os.path.exists(html_file):
+            candidates = [
+                os.path.join(ROOT_DIR, 'index.html'),
+                os.path.join(BASE_DIR, 'index.html'),
+                os.path.join(ROOT_DIR, 'local_share.html'),
+                os.path.join(BASE_DIR, 'local_share.html')
+            ]
+            html_file = next((f for f in candidates if os.path.exists(f)), None)
+            if html_file:
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.end_headers_cors()
                 with open(html_file, 'rb') as f:
                     self.wfile.write(f.read())
                 return
-            self.send_error(404, "local_share.html not found")
+            self.send_error(404, "index.html not found")
             return
 
         # 2. Info

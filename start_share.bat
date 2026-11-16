@@ -51,7 +51,10 @@ set RUNTIME_CMD=
 :: Check Node.js
 where node >nul 2>&1
 if %errorlevel% equ 0 (
-    if exist "%~dp0server.js" (
+    if exist "%~dp0local_server\server.js" (
+        set RUNTIME=Node.js
+        set RUNTIME_CMD=node "%~dp0local_server\server.js"
+    ) else if exist "%~dp0server.js" (
         set RUNTIME=Node.js
         set RUNTIME_CMD=node "%~dp0server.js"
     )
@@ -63,7 +66,10 @@ if "%RUNTIME%"=="" (
     if not exist "%PHP_BIN%" set PHP_BIN=php
     where %PHP_BIN% >nul 2>&1
     if %errorlevel% equ 0 (
-        if exist "%~dp0share_server.php" (
+        if exist "%~dp0local_server\share_server.php" (
+            set RUNTIME=PHP
+            set RUNTIME_CMD="%PHP_BIN%" -S 0.0.0.0:8080 -d upload_max_filesize=10G -d post_max_size=10G -d memory_limit=1G -d max_execution_time=3600 "%~dp0local_server\share_server.php"
+        ) else if exist "%~dp0share_server.php" (
             set RUNTIME=PHP
             set RUNTIME_CMD="%PHP_BIN%" -S 0.0.0.0:8080 -d upload_max_filesize=10G -d post_max_size=10G -d memory_limit=1G -d max_execution_time=3600 "%~dp0share_server.php"
         )
@@ -74,7 +80,10 @@ if "%RUNTIME%"=="" (
 if "%RUNTIME%"=="" (
     where python >nul 2>&1
     if %errorlevel% equ 0 (
-        if exist "%~dp0server.py" (
+        if exist "%~dp0local_server\server.py" (
+            set RUNTIME=Python 3
+            set RUNTIME_CMD=python "%~dp0local_server\server.py"
+        ) else if exist "%~dp0server.py" (
             set RUNTIME=Python 3
             set RUNTIME_CMD=python "%~dp0server.py"
         )

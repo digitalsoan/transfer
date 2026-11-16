@@ -13,7 +13,8 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 date_default_timezone_set('UTC');
 
-$sharedDir = __DIR__ . DIRECTORY_SEPARATOR . 'shared_files';
+$rootDir = dirname(__DIR__);
+$sharedDir = file_exists($rootDir . DIRECTORY_SEPARATOR . 'index.html') ? $rootDir . DIRECTORY_SEPARATOR . 'shared_files' : __DIR__ . DIRECTORY_SEPARATOR . 'shared_files';
 $tempDir = $sharedDir . DIRECTORY_SEPARATOR . '.temp';
 $notesFile = $sharedDir . DIRECTORY_SEPARATOR . '.notes.txt';
 $devicesFile = $tempDir . DIRECTORY_SEPARATOR . 'devices.json';
@@ -190,14 +191,21 @@ if ($method === 'OPTIONS') {
 
 // 1. Serve UI
 if ($path === '/' || $path === '/index.html' || $path === '/local_share.html') {
-    $htmlPath = __DIR__ . DIRECTORY_SEPARATOR . 'local_share.html';
-    if (file_exists($htmlPath)) {
-        header('Content-Type: text/html; charset=utf-8');
-        readfile($htmlPath);
-        exit;
+    $candidates = [
+        $rootDir . DIRECTORY_SEPARATOR . 'index.html',
+        __DIR__ . DIRECTORY_SEPARATOR . 'index.html',
+        $rootDir . DIRECTORY_SEPARATOR . 'local_share.html',
+        __DIR__ . DIRECTORY_SEPARATOR . 'local_share.html'
+    ];
+    foreach ($candidates as $c) {
+        if (file_exists($c)) {
+            header('Content-Type: text/html; charset=utf-8');
+            readfile($c);
+            exit;
+        }
     }
     header('Content-Type: text/plain');
-    echo "local_share.html not found in " . __DIR__;
+    echo "index.html not found";
     exit;
 }
 
