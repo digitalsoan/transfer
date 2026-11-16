@@ -327,7 +327,7 @@
 
     .devices-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 0.75rem;
     }
 
@@ -1332,8 +1332,9 @@
     const ua = navigator.userAgent || '';
     const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isAndroid = /Android/.test(ua);
-    const isWindows = /Windows/.test(ua);
+    const isWindows = /Windows/.test(ua) && !isIOS && !isAndroid;
     const isMac = /Macintosh/.test(ua) && !isIOS;
+    const isMobileDevice = isIOS || isAndroid || /Mobile|Tablet|Android|iPhone|iPad/i.test(ua) || (navigator.maxTouchPoints > 0 && window.innerWidth <= 768);
 
     let myDeviceType = 'desktop';
     let myDeviceOs = 'Desktop';
@@ -1350,6 +1351,11 @@
       myDeviceOs = 'Android';
       myDefaultName = 'Android Mobile';
       myDeviceIcon = '📱';
+    } else if (isMobileDevice) {
+      myDeviceType = 'mobile';
+      myDeviceOs = 'Mobile';
+      myDefaultName = 'Smartphone (Mobile)';
+      myDeviceIcon = '📱';
     } else if (isWindows) {
       myDeviceType = 'desktop';
       myDeviceOs = 'Windows';
@@ -1362,7 +1368,13 @@
       myDeviceIcon = '💻';
     }
 
-    let myDeviceName = localStorage.getItem('localshare_device_name') || myDefaultName;
+    // Do not let stale desktop name persist on mobile device
+    let savedName = localStorage.getItem('localshare_device_name');
+    if (savedName && (isMobileDevice || isIOS || isAndroid) && (savedName.includes('PC') || savedName.includes('Windows') || savedName.includes('Mac'))) {
+      savedName = null;
+      localStorage.removeItem('localshare_device_name');
+    }
+    let myDeviceName = savedName || myDefaultName;
 
     // 4-Digit PIN for Remote Friend Pairing
     let myShortPin = localStorage.getItem('localshare_pin');
@@ -1790,14 +1802,30 @@
       let startTime = 0;
 
       conn.on('open', () => {
+        // Send our accurate device identity to the remote peer!
+        conn.send(JSON.stringify({
+          type: 'device-info',
+          name: myDeviceName,
+          os: myDeviceOs,
+          type: myDeviceType,
+          icon: myDeviceIcon,
+          pin: myShortPin
+        }));
+
+        // Initial fallback from discoveredDevices or metadata
+        const disc = Object.values(discoveredDevices).find(d => d.peerId === conn.peer);
         const meta = conn.metadata || {};
-        const friendName = meta.name || 'Friend Device';
+        const friendName = (disc && disc.name) || meta.name || 'Remote Device';
+        const friendOs = (disc && disc.os) || meta.os || 'Remote';
+        const friendType = (disc && disc.type) || meta.type || 'mobile';
+        const friendIcon = (disc && disc.icon) || meta.icon || (friendType === 'mobile' ? '📱' : '💻');
+
         peerConnections[conn.peer] = {
           conn,
           name: friendName,
-          os: meta.os || 'Remote',
-          type: meta.type || 'mobile',
-          icon: meta.icon || ((meta.type === 'mobile' || meta.os === 'iOS' || meta.os === 'Android') ? '📱' : '💻')
+          os: friendOs,
+          type: friendType,
+          icon: friendIcon
         };
         showToast(`Connected to ${friendName}!`);
         playChime();
@@ -1807,7 +1835,7 @@
       conn.on('data', async (data) => {
         if (!data) return;
 
-        // A. JSON Control Messages (file-meta / file-complete)
+        // A. JSON Control Messages
         if (typeof data === 'string') {
           let packet = null;
           try {
@@ -1816,6 +1844,19 @@
             return;
           }
 
+          // 1. Device identity handshake: update remote device card accurately
+          if (packet && packet.type === 'device-info') {
+            if (peerConnections[conn.peer]) {
+              peerConnections[conn.peer].name = packet.name || 'Friend Device';
+              peerConnections[conn.peer].os = packet.os || 'Remote';
+              peerConnections[conn.peer].type = packet.type || 'mobile';
+              peerConnections[conn.peer].icon = packet.icon || (packet.type === 'mobile' ? '📱' : '💻');
+              renderDevicesList();
+            }
+            return;
+          }
+
+          // 2. File metadata packet
           if (packet && packet.type === 'file-meta') {
             incomingFileMeta = packet;
             incomingChunks = [];
@@ -1828,6 +1869,7 @@
             return;
           }
 
+          // 3. File complete packet
           if (packet && packet.type === 'file-complete' && incomingFileMeta) {
             uploadCard.style.display = 'none';
 
