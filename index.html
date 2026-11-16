@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>LocalShare • Real-time Wi-Fi &amp; Internet File Transfer</title>
-  <meta name="theme-color" content="#0a0e17">
+  <title>LocalShare • Real-time Wi-Fi &amp; Internet File Transfer • by Digital Soan</title>
+  <meta name="description" content="LocalShare by Digital Soan — Clean, fast, direct P2P local Wi-Fi and internet file transfer. Zero file storage on servers.">
+  <meta name="theme-color" content="#09090b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
@@ -22,13 +23,25 @@
 
     <!-- Top Header -->
     <header>
-      <div class="brand">
-        <div class="brand-icon">⚡</div>
-        <div class="brand-text">
-          <h1>LocalShare</h1>
-          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v2.0 Modular Turbo</span></p>
+      <a href="/" class="brand" aria-label="LocalShare by Digital Soan">
+        <!-- DGson Monochrome Circular Emblem (Faithful to digitalsoan.com) -->
+        <div class="brand-emblem" aria-hidden="true">
+          <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="46" stroke="#09090B" stroke-width="2.75" />
+            <text x="50" y="59" text-anchor="middle" fill="#09090B" style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: -0.04em;">
+              <tspan font-size="34" font-weight="800">DG</tspan>
+              <tspan font-size="25" font-weight="500">son</tspan>
+            </text>
+          </svg>
         </div>
-      </div>
+        <div class="brand-text">
+          <div class="brand-title-row">
+            <h1>LocalShare</h1>
+            <span class="brand-badge">P2P TURBO</span>
+          </div>
+          <p>Direct File Transfer &bull; Same Wi-Fi Auto-Discovery &bull; <a href="https://digitalsoan.com" target="_blank" rel="noopener">by Digital Soan</a></p>
+        </div>
+      </a>
       <div class="header-actions">
         <button class="btn-header" id="btnNotes">
           <span>📝</span> Shared Notes
@@ -54,7 +67,7 @@
         <div class="url-chip" id="urlChip" title="Click to copy link">
           <span>🌐</span>
           <span id="serverUrlText">https://transfer.digitalsoan.com</span>
-          <span style="font-size:0.75rem; opacity:0.8;">📋 Copy Link</span>
+          <span style="font-size:0.72rem; opacity:0.8;">📋 Copy Link</span>
         </div>
         <button class="btn-header" id="btnToggleRemote" style="font-size:0.8rem; padding:0.4rem 0.75rem;">
           <span>🌍</span> Remote Friend PIN
@@ -66,7 +79,7 @@
     <section class="devices-section">
       <div class="devices-header">
         <div class="devices-title">
-          <span id="devicesSectionTitle">📡 Connected Devices (Auto-Discovered on Wi-Fi)</span>
+          <span id="devicesSectionTitle">Connected Devices (Auto-Discovered on Wi-Fi)</span>
         </div>
         <span class="devices-badge" id="devicesCountBadge">1 Online</span>
       </div>
@@ -75,7 +88,7 @@
       </div>
       <div class="radar-box" id="radarWaitingBox" style="display:flex;">
         <div class="radar-spinner"></div>
-        <span id="radarWaitingText">Scanning your Wi-Fi network for nearby devices... Open this page on your iPhone or PC to connect automatically!</span>
+        <span id="radarWaitingText">Scanning Wi-Fi network for nearby devices... Open transfer.digitalsoan.com on your phone to connect automatically.</span>
       </div>
     </section>
 
@@ -91,7 +104,7 @@
         </div>
         <div class="room-join-row">
           <input type="text" class="room-input" id="joinRoomInput" placeholder="FRIEND'S PIN" maxlength="12">
-          <button class="btn-sm" id="btnJoinRoom" style="background:var(--purple); color:#fff; border-color:var(--purple);">
+          <button class="btn-sm" id="btnJoinRoom" style="background:var(--primary); color:#fff; border-color:var(--primary);">
             🔗 Connect Friend
           </button>
         </div>
@@ -101,25 +114,44 @@
       </div>
     </section>
 
+    <!-- Promotional Strip: SCORNM CRM & Digital Soan -->
+    <section class="promo-strip">
+      <div class="promo-left">
+        <span class="promo-badge">SCORNM CRM</span>
+        <div class="promo-text">
+          <h3>All-In-One Enterprise CRM, ERP &amp; Team Automation</h3>
+          <p>Supercharge your business with omnichannel leads, automated billing, accounting &amp; WhatsApp marketing.</p>
+        </div>
+      </div>
+      <div class="promo-actions">
+        <a href="https://scornm.com" target="_blank" rel="noopener" class="btn-promo btn-promo-primary">
+          Explore SCORNM &rarr;
+        </a>
+        <a href="https://digitalsoan.com" target="_blank" rel="noopener" class="btn-promo btn-promo-ghost">
+          Digital Soan Agency
+        </a>
+      </div>
+    </section>
+
     <!-- iOS Tips Banner -->
     <div class="ios-tip-banner">
       <span class="icon">🖼️</span>
       <div>
-        <strong>Save directly to iPhone Gallery (Photos):</strong> Tap green <strong>"📲 Save to Gallery"</strong> on any photo or video. The iOS sheet will open -> tap <strong>"Save Image"</strong> or <strong>"Save Video"</strong>!
+        <strong>Save directly to iPhone Gallery (Photos):</strong> Tap <strong>"📲 Save to Gallery"</strong> on any photo or video. The iOS sheet will open &rarr; tap <strong>"Save Image"</strong> or <strong>"Save Video"</strong>.
       </div>
     </div>
 
     <!-- Main Transfer Box -->
     <section class="transfer-box">
 
-      <!-- Large Action Buttons for Mobile / iOS -->
+      <!-- Action Buttons for Mobile / iOS -->
       <div class="mobile-actions">
         <label for="mediaInput" class="btn-action-large" id="btnPickMedia">
           <span class="action-icon">📸</span>
           <span class="action-title">Send Photos &amp; Videos</span>
           <span class="action-subtitle">Open iPhone Photo Library (Full 4K Quality)</span>
         </label>
-        <label for="docInput" class="btn-action-large purple" id="btnPickDoc">
+        <label for="docInput" class="btn-action-large" id="btnPickDoc">
           <span class="action-icon">📁</span>
           <span class="action-title">Send Any File</span>
           <span class="action-subtitle">Open Files app, PDFs, ZIPs, Docs</span>
@@ -158,9 +190,6 @@
           <span id="progressTransferInfo">0 MB / 0 MB</span>
           <span id="progressSpeed">0.0 MB/s</span>
           <span id="progressEta">Calculating...</span>
-        </div>
-        <div id="progressWakeLockHint" style="display:none; font-size:0.75rem; color:var(--accent); text-align:center; margin-top:0.35rem; padding:0.25rem 0.5rem; background:rgba(52,199,89,0.1); border-radius:6px;">
-          <span>💡</span> Screen kept awake • Resumable stream active
         </div>
       </div>
 
@@ -206,6 +235,38 @@
       </div>
     </section>
 
+    <!-- Architectural Site Footer (Matching digitalsoan.com) -->
+    <footer class="site-footer">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="brand-emblem" style="width:28px; height:28px;" aria-hidden="true">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="50" cy="50" r="46" stroke="#09090B" stroke-width="2.75" />
+              <text x="50" y="59" text-anchor="middle" fill="#09090B" style="font-family: sans-serif; letter-spacing: -0.04em;">
+                <tspan font-size="34" font-weight="800">DG</tspan>
+                <tspan font-size="25" font-weight="500">son</tspan>
+              </text>
+            </svg>
+          </div>
+          <div>
+            <span>Digital Soan</span>
+            <small> &bull; Autonomous Engineering &amp; Software Architecture</small>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="https://digitalsoan.com" target="_blank" rel="noopener">digitalsoan.com</a>
+          <a href="https://scornm.com" target="_blank" rel="noopener">scornm.com CRM</a>
+          <button type="button" id="btnOpenPrivacy">Privacy Policy</button>
+          <button type="button" id="btnOpenTerms">Terms of Use</button>
+          <button type="button" id="btnOpenCookiePrefs">Cookie Preferences</button>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2026 Digital Soan (Pranav Soan). Direct browser-to-browser P2P transmission &mdash; zero server storage.</span>
+        <span class="footer-dpdp-badge">&#x1F1EE;&#x1F1F3; DPDP Act 2023 Compliant</span>
+      </div>
+    </footer>
+
   </div>
 
   <!-- Lightbox / Preview Modal -->
@@ -219,12 +280,12 @@
         <!-- Dynamic media preview -->
       </div>
       <div class="modal-footer">
-        <span id="previewMeta" style="font-size:0.8rem; color:var(--text-muted);"></span>
+        <span id="previewMeta" style="font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono);"></span>
         <div class="modal-footer-btns">
-          <button class="btn-file-action btn-gallery" id="btnModalGallery" style="padding:0.5rem 0.9rem;" onclick="saveCurrentPreviewToGallery()">
+          <button class="btn-file-action btn-gallery" id="btnModalGallery" style="padding:0.45rem 0.85rem;" onclick="saveCurrentPreviewToGallery()">
             📲 Save to Gallery / Photos
           </button>
-          <a href="#" class="btn-file-action" id="btnModalDownload" download style="padding:0.5rem 0.9rem;">
+          <a href="#" class="btn-file-action" id="btnModalDownload" download style="padding:0.45rem 0.85rem;">
             ⬇ Download
           </a>
         </div>
@@ -254,6 +315,103 @@
     </div>
   </div>
 
+  <!-- Privacy Policy Modal (DPDP Act 2023 Compliant) -->
+  <div class="modal-overlay" id="privacyModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Privacy Policy &bull; DPDP Act 2023</div>
+        <button class="btn-close" id="btnClosePrivacy">&times;</button>
+      </div>
+      <div class="modal-body legal-content">
+        <h3>1. Direct P2P Architecture (Zero File Retention)</h3>
+        <p>LocalShare operates strictly via peer-to-peer WebRTC connections. Files, media, and documents transmitted through this service travel encrypted directly between your devices or through temporary relay candidates. <strong>At no point are your files stored, logged, or retained on Digital Soan servers.</strong></p>
+        
+        <h3>2. Compliance with Digital Personal Data Protection Act (DPDP Act 2023)</h3>
+        <p>In accordance with India's DPDP Act 2023, Digital Soan acts as a Data Fiduciary adhering to lawful processing, purpose limitation, and data minimization. We only store temporary pairing PINs in memory and your local theme/cookie preferences in your browser's LocalStorage.</p>
+        
+        <h3>3. Data Fiduciary &amp; Grievance Redressal</h3>
+        <p>Fiduciary: <strong>Digital Soan (Pranav Soan)</strong><br>
+        Website: <a href="https://digitalsoan.com" target="_blank" rel="noopener">https://digitalsoan.com</a><br>
+        Email: <a href="mailto:pranavsoan@gmail.com">pranavsoan@gmail.com</a></p>
+      </div>
+      <div class="modal-footer">
+        <span style="font-size:0.75rem; color:var(--text-muted);">Last Updated: November 2026</span>
+        <button class="btn-sm" onclick="document.getElementById('privacyModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terms of Use Modal -->
+  <div class="modal-overlay" id="termsModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Terms of Use</div>
+        <button class="btn-close" id="btnCloseTerms">&times;</button>
+      </div>
+      <div class="modal-body legal-content">
+        <h3>1. Acceptable Use</h3>
+        <p>LocalShare is provided by Digital Soan for lawful personal and commercial file transfers. You agree not to use the service to transmit malware, pirated material, or unlawful content.</p>
+        
+        <h3>2. Service Availability &amp; Warranty</h3>
+        <p>This service is provided on an "as is" and "as available" basis. Transfer speeds depend on local Wi-Fi router throughput, device hardware encoding, and network conditions.</p>
+        
+        <h3>3. Intellectual Property</h3>
+        <p>All brand marks, design systems, and software architectures are proprietary to Digital Soan and Pranav Soan.</p>
+      </div>
+      <div class="modal-footer">
+        <span style="font-size:0.75rem; color:var(--text-muted);">&copy; Digital Soan</span>
+        <button class="btn-sm" onclick="document.getElementById('termsModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cookie Preferences Modal (DPDP Act 2023) -->
+  <div class="modal-overlay" id="cookiePrefsModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Cookie &amp; Storage Preferences</div>
+        <button class="btn-close" id="btnCloseCookiePrefs">&times;</button>
+      </div>
+      <div class="modal-body legal-content" style="width: 100%;">
+        <div class="cookie-row">
+          <div class="cookie-info">
+            <strong>Essential Storage (Required)</strong>
+            <span>Preserves device pairing identity, PIN session, theme preferences, and offline server synchronization.</span>
+          </div>
+          <input type="checkbox" checked disabled style="accent-color:var(--primary); width:18px; height:18px;">
+        </div>
+        <div class="cookie-row">
+          <div class="cookie-info">
+            <strong>Diagnostic &amp; Telemetry Analytics (Optional)</strong>
+            <span>Anonymized WebRTC connection success rates to help us maintain high-speed reliability.</span>
+          </div>
+          <input type="checkbox" id="chkAnalytics" checked style="accent-color:var(--primary); width:18px; height:18px; cursor:pointer;">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-sm" onclick="document.getElementById('cookiePrefsModal').style.display='none'">Cancel</button>
+        <button class="btn-sm" id="btnSaveCookiePrefs" style="background:var(--primary); color:#ffffff; border-color:var(--primary);">
+          Save Preferences
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating DPDP Act 2023 Consent Banner -->
+  <div class="consent-banner" id="consentBanner" style="display:none;">
+    <div class="consent-text">
+      <h4><span>🇮🇳</span> Privacy Notice &bull; DPDP Act 2023</h4>
+      <p>LocalShare uses local browser storage solely for device pairing &amp; offline preferences. We do not store or track your files on our servers. See our <a href="#" id="linkNoticePrivacy" onclick="event.preventDefault(); document.getElementById('privacyModal').style.display='flex';">Privacy Policy</a>.</p>
+    </div>
+    <div class="consent-actions">
+      <button class="btn-sm" id="btnConsentEssential">Essential Only</button>
+      <button class="btn-sm" id="btnConsentPrefs">Preferences</button>
+      <button class="btn-sm" id="btnConsentAccept" style="background:var(--primary); color:#ffffff; border-color:var(--primary);">
+        Accept All
+      </button>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast" id="toast">Link copied to clipboard!</div>
 
@@ -265,6 +423,7 @@
   <script src="assets/js/p2p.js"></script>
   <script src="assets/js/transfer.js"></script>
   <script src="assets/js/local-api.js"></script>
+  <script src="assets/js/consent.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
