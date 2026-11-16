@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>LocalShare • Local Wi-Fi & Internet File Transfer</title>
+  <title>LocalShare • Real-time Wi-Fi &amp; Internet File Transfer</title>
   <meta name="theme-color" content="#0a0e17">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <!-- PeerJS for Over-The-Internet WebRTC P2P Transfer -->
+  <!-- PeerJS for WebRTC Direct P2P Transfer -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Paho MQTT for Instant Same-Wi-Fi Device Auto-Discovery -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
   <style>
     :root {
       --bg: #0a0e17;
@@ -29,7 +31,7 @@
 
     [data-theme="light"] {
       --bg: #f2f2f7;
-      --card-bg: rgba(255, 255, 255, 0.85);
+      --card-bg: rgba(255, 255, 255, 0.88);
       --card-border: rgba(0, 0, 0, 0.08);
       --primary: #0071e3;
       --primary-hover: #0077ed;
@@ -143,53 +145,12 @@
       transform: scale(var(--active-scale));
     }
 
-    /* Mode Switcher Pills (Local Wi-Fi vs Over Internet) */
-    .mode-switcher {
-      display: flex;
-      align-items: center;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--card-border);
-      border-radius: 999px;
-      padding: 0.25rem;
-      gap: 0.25rem;
-      backdrop-filter: blur(12px);
-    }
-
-    .mode-btn {
-      flex: 1;
-      padding: 0.5rem 1rem;
-      border-radius: 999px;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 0.825rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.45rem;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
-
-    .mode-btn.active {
-      background: var(--primary);
-      color: #fff;
-      box-shadow: 0 2px 10px var(--primary-glow);
-    }
-
-    .mode-btn.active.internet-active {
-      background: linear-gradient(135deg, var(--purple), var(--primary));
-      box-shadow: 0 2px 12px rgba(175, 82, 222, 0.3);
-    }
-
     /* Connection Banner */
     .connection-banner {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 1rem;
-      padding: 1rem 1.25rem;
+      padding: 0.95rem 1.25rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -249,35 +210,30 @@
       background: rgba(0, 113, 227, 0.12);
       border: 1px solid rgba(0, 113, 227, 0.3);
       color: var(--primary);
-      padding: 0.35rem 0.85rem;
-      border-radius: 0.5rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.85rem;
-      font-weight: 600;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.45rem;
       cursor: pointer;
-      transition: all 0.2s ease;
+      user-select: none;
+      transition: background 0.2s ease;
     }
 
     .url-chip:hover {
-      background: rgba(0, 113, 227, 0.2);
+      background: rgba(0, 113, 227, 0.22);
     }
 
-    .url-chip:active {
-      transform: scale(var(--active-scale));
-    }
-
-    /* Internet Room Card */
+    /* Remote Friend Card */
     .internet-room-card {
       background: linear-gradient(135deg, rgba(175, 82, 222, 0.12), rgba(0, 113, 227, 0.1));
       border: 1px solid rgba(175, 82, 222, 0.3);
       border-radius: 1.15rem;
-      padding: 1.15rem 1.25rem;
-      display: none;
+      padding: 1rem 1.25rem;
+      display: flex;
       flex-direction: column;
-      gap: 0.85rem;
+      gap: 0.75rem;
       backdrop-filter: blur(16px);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     }
@@ -287,13 +243,14 @@
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 0.65rem;
     }
 
     .room-code-group {
       display: flex;
       align-items: center;
       gap: 0.65rem;
+      flex-wrap: wrap;
     }
 
     .room-code-pill {
@@ -323,7 +280,7 @@
       font-size: 0.85rem;
       font-family: monospace;
       outline: none;
-      width: 150px;
+      width: 140px;
       text-transform: uppercase;
     }
 
@@ -352,27 +309,26 @@
     }
 
     .devices-title {
-      font-size: 1rem;
+      font-size: 0.95rem;
       font-weight: 700;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      letter-spacing: -0.01em;
+      gap: 0.4rem;
     }
 
     .devices-badge {
-      background: var(--accent-glow);
-      color: var(--accent);
       font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.2rem 0.55rem;
+      padding: 0.2rem 0.6rem;
       border-radius: 999px;
+      background: rgba(52, 199, 89, 0.15);
+      color: var(--accent);
+      font-weight: 600;
     }
 
     .devices-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 0.85rem;
+      gap: 0.75rem;
     }
 
     .device-card {
@@ -382,10 +338,9 @@
       padding: 1rem;
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 0.75rem;
-      transition: all 0.25s ease;
       position: relative;
+      transition: all 0.25s ease;
     }
 
     .device-card.this-device {
@@ -399,43 +354,36 @@
       box-shadow: 0 0 16px rgba(52, 199, 89, 0.1);
     }
 
-    .device-card.internet-device {
-      background: linear-gradient(135deg, rgba(175, 82, 222, 0.15), rgba(0, 113, 227, 0.1));
-      border-color: rgba(175, 82, 222, 0.4);
-      box-shadow: 0 0 16px rgba(175, 82, 222, 0.15);
-    }
-
     .device-icon-box {
       width: 44px;
       height: 44px;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.06);
+      background: var(--hover-bg);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.6rem;
-      flex-shrink: 0;
+      font-size: 1.45rem;
       position: relative;
+      flex-shrink: 0;
     }
 
     .device-online-dot {
       position: absolute;
       bottom: -2px;
       right: -2px;
-      width: 12px;
-      height: 12px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: var(--accent);
       border: 2px solid var(--bg);
-      box-shadow: 0 0 6px var(--accent);
     }
 
     .device-details {
       display: flex;
       flex-direction: column;
       gap: 0.15rem;
-      flex: 1;
       overflow: hidden;
+      flex: 1;
     }
 
     .device-name-row {
@@ -446,215 +394,204 @@
 
     .device-name {
       font-size: 0.875rem;
-      font-weight: 700;
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      color: var(--text);
     }
 
     .device-tag {
       font-size: 0.65rem;
-      font-weight: 600;
-      padding: 0.15rem 0.45rem;
-      border-radius: 999px;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
       background: rgba(255, 255, 255, 0.1);
       color: var(--text-muted);
-      flex-shrink: 0;
+      font-weight: 600;
     }
 
     .device-tag.online {
-      background: var(--accent-glow);
+      background: rgba(52, 199, 89, 0.18);
       color: var(--accent);
     }
 
     .device-meta {
-      font-size: 0.725rem;
+      font-size: 0.75rem;
       color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
     }
 
     .btn-send-to-device {
       background: var(--primary);
       color: #fff;
       border: none;
-      padding: 0.45rem 0.85rem;
+      padding: 0.45rem 0.75rem;
       border-radius: 0.5rem;
-      font-size: 0.775rem;
+      font-size: 0.75rem;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.35rem;
+      transition: background 0.2s ease, transform 0.15s ease;
       white-space: nowrap;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 8px var(--primary-glow);
+      margin-left: auto;
     }
 
     .btn-send-to-device:hover {
       background: var(--primary-hover);
-      transform: translateY(-1px);
     }
 
     .btn-send-to-device:active {
       transform: scale(var(--active-scale));
     }
 
-    /* Radar scan empty state */
+    /* Radar Scanning Area */
     .radar-box {
+      background: rgba(0, 0, 0, 0.2);
       border: 1px dashed var(--card-border);
       border-radius: 0.85rem;
-      padding: 1rem;
+      padding: 1.15rem;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.75rem;
-      color: var(--text-muted);
       font-size: 0.825rem;
-      background: rgba(255, 255, 255, 0.01);
+      color: var(--text-muted);
+      text-align: center;
     }
 
     .radar-spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid var(--card-border);
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(0, 113, 227, 0.2);
       border-top-color: var(--primary);
       border-radius: 50%;
-      animation: spin 1.2s infinite linear;
+      animation: spin 1s infinite linear;
+      flex-shrink: 0;
     }
 
     @keyframes spin {
       100% { transform: rotate(360deg); }
     }
 
-    /* iOS Quick Tip Banner */
+    /* iOS Tip Banner */
     .ios-tip-banner {
-      background: linear-gradient(135deg, rgba(52, 199, 89, 0.12), rgba(0, 113, 227, 0.12));
-      border: 1px solid rgba(52, 199, 89, 0.35);
-      border-radius: 0.75rem;
+      background: linear-gradient(135deg, rgba(52, 199, 89, 0.12), rgba(0, 113, 227, 0.08));
+      border: 1px solid rgba(52, 199, 89, 0.25);
+      border-radius: 0.85rem;
       padding: 0.75rem 1rem;
-      font-size: 0.825rem;
-      color: var(--text);
       display: flex;
       align-items: center;
       gap: 0.65rem;
+      font-size: 0.8rem;
+      color: var(--text);
     }
 
-    .ios-tip-banner span.icon {
-      font-size: 1.25rem;
+    .ios-tip-banner .icon {
+      font-size: 1.3rem;
       flex-shrink: 0;
     }
 
     /* Transfer Actions Box */
     .transfer-box {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 1.25rem;
-      padding: 1.5rem;
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      gap: 0.85rem;
     }
 
-    /* Mobile Quick Action Buttons */
     .mobile-actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 0.85rem;
     }
 
-    @media (max-width: 520px) {
+    @media (max-width: 600px) {
       .mobile-actions {
         grid-template-columns: 1fr;
       }
     }
 
     .btn-action-large {
-      background: linear-gradient(135deg, rgba(0, 113, 227, 0.15), rgba(0, 113, 227, 0.05));
-      border: 1.5px solid rgba(0, 113, 227, 0.4);
-      color: var(--text);
-      padding: 1.15rem 1rem;
-      border-radius: 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 1.25rem 1rem;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      text-align: center;
       gap: 0.45rem;
       cursor: pointer;
+      user-select: none;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       transition: all 0.2s ease;
-      text-align: center;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     }
 
     .btn-action-large:hover {
-      background: linear-gradient(135deg, rgba(0, 113, 227, 0.25), rgba(0, 113, 227, 0.1));
+      background: var(--hover-bg);
       border-color: var(--primary);
-      transform: translateY(-1px);
+      transform: translateY(-2px);
     }
 
     .btn-action-large:active {
       transform: scale(var(--active-scale));
     }
 
-    .btn-action-large.purple {
-      background: linear-gradient(135deg, rgba(175, 82, 222, 0.15), rgba(175, 82, 222, 0.05));
-      border-color: rgba(175, 82, 222, 0.4);
-    }
-
     .btn-action-large.purple:hover {
-      background: linear-gradient(135deg, rgba(175, 82, 222, 0.25), rgba(175, 82, 222, 0.1));
       border-color: var(--purple);
     }
 
-    .btn-action-large .action-icon {
-      font-size: 2rem;
+    .action-icon {
+      font-size: 2.2rem;
     }
 
-    .btn-action-large .action-title {
-      font-size: 1rem;
+    .action-title {
+      font-size: 0.95rem;
       font-weight: 700;
-      letter-spacing: -0.01em;
+      color: var(--text);
     }
 
-    .btn-action-large .action-subtitle {
-      font-size: 0.725rem;
+    .action-subtitle {
+      font-size: 0.75rem;
       color: var(--text-muted);
     }
 
-    /* Desktop Drag & Drop Zone */
+    /* Drag & Drop Area */
     .dropzone {
-      border: 2px dashed var(--card-border);
-      border-radius: 1rem;
-      padding: 2.25rem 1.25rem;
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 1.25rem;
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       text-align: center;
-      background: rgba(255, 255, 255, 0.02);
+      gap: 0.5rem;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
       cursor: pointer;
-      transition: all 0.25s ease;
-      position: relative;
+      transition: all 0.2s ease;
     }
 
-    .dropzone:hover, .dropzone.dragover {
+    .dropzone.dragover {
       border-color: var(--primary);
       background: rgba(0, 113, 227, 0.08);
-      box-shadow: 0 0 24px var(--primary-glow);
-    }
-
-    .dropzone input[type="file"] {
-      display: none;
+      transform: scale(1.01);
     }
 
     .dropzone-icon {
       font-size: 2.5rem;
-      margin-bottom: 0.5rem;
-      display: block;
+      color: var(--primary);
     }
 
     .dropzone-title {
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 600;
-      margin-bottom: 0.25rem;
     }
 
     .dropzone-hint {
@@ -662,41 +599,42 @@
       color: var(--text-muted);
     }
 
-    /* Progress & Upload Queue */
+    /* Progress Card */
     .upload-progress-card {
-      background: rgba(0, 113, 227, 0.08);
-      border: 1px solid rgba(0, 113, 227, 0.3);
-      border-radius: 0.75rem;
+      background: var(--card-bg);
+      border: 1px solid var(--primary);
+      border-radius: 1rem;
       padding: 1rem 1.25rem;
       display: none;
       flex-direction: column;
       gap: 0.65rem;
+      box-shadow: 0 4px 20px var(--primary-glow);
     }
 
     .progress-header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       font-size: 0.85rem;
-      font-weight: 600;
     }
 
     .progress-filename {
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 60%;
+      max-width: 70%;
     }
 
     .progress-stats {
-      font-size: 0.8rem;
+      font-family: monospace;
       color: var(--primary);
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .progress-bar-container {
       width: 100%;
-      height: 7px;
+      height: 8px;
       background: rgba(255, 255, 255, 0.1);
       border-radius: 999px;
       overflow: hidden;
@@ -705,13 +643,14 @@
     .progress-bar-fill {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, var(--primary), var(--purple));
+      background: linear-gradient(90deg, var(--primary), var(--accent));
       border-radius: 999px;
-      transition: width 0.15s ease;
+      transition: width 0.1s linear;
     }
 
     .progress-footer {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       font-size: 0.75rem;
       color: var(--text-muted);
@@ -722,12 +661,13 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 1.25rem;
-      padding: 1.5rem;
+      padding: 1.25rem;
       display: flex;
       flex-direction: column;
       gap: 1rem;
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
 
     .files-header {
@@ -745,85 +685,82 @@
     }
 
     .files-title-group h2 {
-      font-size: 1.2rem;
+      font-size: 1.15rem;
       font-weight: 700;
-      letter-spacing: -0.01em;
     }
 
     .files-badge {
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--text);
       font-size: 0.75rem;
-      font-weight: 600;
       padding: 0.2rem 0.55rem;
       border-radius: 999px;
+      background: var(--hover-bg);
+      color: var(--text-muted);
     }
 
     .files-controls {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      flex-wrap: wrap;
     }
 
     .search-box {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(0, 0, 0, 0.2);
       border: 1px solid var(--card-border);
-      border-radius: 0.5rem;
-      padding: 0.35rem 0.65rem;
-      font-size: 0.825rem;
       color: var(--text);
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
       outline: none;
       width: 140px;
-      transition: all 0.2s ease;
+      transition: width 0.2s ease, border-color 0.2s ease;
     }
 
     .search-box:focus {
+      width: 190px;
       border-color: var(--primary);
-      width: 180px;
     }
 
     .btn-sm {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--card-bg);
       border: 1px solid var(--card-border);
       color: var(--text);
-      padding: 0.35rem 0.65rem;
-      border-radius: 0.5rem;
-      font-size: 0.8rem;
-      font-weight: 500;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.775rem;
+      font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.35rem;
       transition: all 0.2s ease;
     }
 
     .btn-sm:hover {
       background: var(--hover-bg);
-      border-color: rgba(255, 255, 255, 0.2);
     }
 
-    .btn-sm:active {
-      transform: scale(var(--active-scale));
-    }
-
-    /* Filter Tabs */
+    /* Filters */
     .filter-tabs {
       display: flex;
+      align-items: center;
       gap: 0.4rem;
       overflow-x: auto;
       padding-bottom: 0.25rem;
-      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .filter-tabs::-webkit-scrollbar {
+      display: none;
     }
 
     .tab-pill {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--card-border);
+      background: var(--hover-bg);
+      border: 1px solid transparent;
       color: var(--text-muted);
-      padding: 0.35rem 0.75rem;
+      padding: 0.35rem 0.85rem;
       border-radius: 999px;
       font-size: 0.775rem;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
       transition: all 0.2s ease;
@@ -831,51 +768,49 @@
 
     .tab-pill.active {
       background: var(--primary);
-      border-color: var(--primary);
       color: #fff;
+      box-shadow: 0 2px 8px var(--primary-glow);
     }
 
-    /* File Grid */
+    /* Files Grid */
     .file-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 0.85rem;
     }
 
-    @media (max-width: 500px) {
+    @media (max-width: 480px) {
       .file-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.65rem;
       }
     }
 
     .file-card {
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid var(--card-border);
-      border-radius: 0.85rem;
-      padding: 0.85rem;
+      border-radius: 1rem;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      gap: 0.65rem;
       transition: all 0.2s ease;
-      position: relative;
     }
 
     .file-card:hover {
-      border-color: rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.05);
       transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
     }
 
     .file-thumbnail-box {
       width: 100%;
-      height: 125px;
-      border-radius: 0.5rem;
-      overflow: hidden;
-      background: rgba(0, 0, 0, 0.25);
+      height: 130px;
+      background: rgba(0, 0, 0, 0.3);
       display: flex;
       align-items: center;
       justify-content: center;
       position: relative;
+      overflow: hidden;
       cursor: pointer;
     }
 
@@ -883,127 +818,130 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
+      transition: transform 0.3s ease;
+    }
+
+    .file-card:hover .file-thumbnail-box img {
+      transform: scale(1.05);
     }
 
     .file-type-icon {
-      font-size: 2.75rem;
-      opacity: 0.85;
+      font-size: 2.8rem;
     }
 
     .video-play-overlay {
       position: absolute;
-      width: 38px;
-      height: 38px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px);
+      background: rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       display: flex;
       align-items: center;
       justify-content: center;
       color: #fff;
       font-size: 1.1rem;
+      backdrop-filter: blur(8px);
     }
 
     .file-meta {
+      padding: 0.75rem 0.85rem;
       display: flex;
       flex-direction: column;
       gap: 0.2rem;
+      flex: 1;
     }
 
     .file-name {
-      font-size: 0.85rem;
+      font-size: 0.825rem;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      color: var(--text);
     }
 
     .file-details {
+      font-size: 0.725rem;
+      color: var(--text-muted);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 0.725rem;
-      color: var(--text-muted);
     }
 
     .file-actions {
+      padding: 0.5rem 0.75rem 0.75rem;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      margin-top: 0.2rem;
+      gap: 0.35rem;
     }
 
     .file-action-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.4rem;
+      gap: 0.35rem;
     }
 
     .btn-file-action {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--hover-bg);
       border: 1px solid var(--card-border);
       color: var(--text);
-      padding: 0.45rem 0.5rem;
+      padding: 0.4rem 0.5rem;
       border-radius: 0.5rem;
-      font-size: 0.75rem;
+      font-size: 0.725rem;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.35rem;
+      gap: 0.3rem;
       text-decoration: none;
       transition: all 0.15s ease;
+      text-align: center;
     }
 
     .btn-file-action:hover {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
     }
 
     .btn-file-action.btn-gallery {
-      background: linear-gradient(135deg, rgba(52, 199, 89, 0.2), rgba(52, 199, 89, 0.08));
+      background: rgba(52, 199, 89, 0.16);
       border-color: rgba(52, 199, 89, 0.4);
-      color: var(--accent);
+      color: #34c759;
       font-weight: 700;
     }
 
     .btn-file-action.btn-gallery:hover {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-      box-shadow: 0 2px 10px var(--accent-glow);
+      background: rgba(52, 199, 89, 0.26);
+    }
+
+    .btn-file-action.btn-del {
+      color: var(--danger);
+      border-color: rgba(255, 69, 58, 0.2);
     }
 
     .btn-file-action.btn-del:hover {
-      background: var(--danger);
-      border-color: var(--danger);
-      color: #fff;
+      background: rgba(255, 69, 58, 0.1);
     }
 
-    .btn-file-action:active {
-      transform: scale(var(--active-scale));
-    }
-
-    /* Empty state */
+    /* Empty State */
     .empty-state {
-      text-align: center;
       padding: 3rem 1rem;
-      color: var(--text-muted);
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center;
+      text-align: center;
       gap: 0.5rem;
+      color: var(--text-muted);
     }
 
     .empty-icon {
-      font-size: 2.75rem;
-      opacity: 0.4;
+      font-size: 3rem;
+      margin-bottom: 0.25rem;
     }
 
-    /* Lightbox Modal */
+    /* Modal / Lightbox */
     .modal-overlay {
       position: fixed;
       top: 0;
@@ -1011,8 +949,8 @@
       right: 0;
       bottom: 0;
       background: rgba(0, 0, 0, 0.85);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       z-index: 1000;
       display: none;
       align-items: center;
@@ -1024,13 +962,13 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 1.25rem;
-      max-width: 720px;
+      max-width: 800px;
       width: 100%;
       max-height: 90vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
     }
 
     .modal-header {
@@ -1043,7 +981,7 @@
 
     .modal-title {
       font-size: 0.95rem;
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1051,27 +989,21 @@
     }
 
     .btn-close {
-      background: rgba(255, 255, 255, 0.1);
+      background: transparent;
       border: none;
-      color: var(--text);
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      color: var(--text-muted);
+      font-size: 1.5rem;
       cursor: pointer;
-      font-size: 1rem;
+      line-height: 1;
     }
 
     .modal-body {
       padding: 1.25rem;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      overflow-y: auto;
-      max-height: calc(90vh - 150px);
     }
 
     .modal-body img {
@@ -1081,21 +1013,14 @@
       object-fit: contain;
     }
 
-    .modal-body video {
-      max-width: 100%;
-      max-height: 65vh;
-      border-radius: 0.75rem;
-      outline: none;
-    }
-
     .modal-footer {
       padding: 0.85rem 1.25rem;
+      border-top: 1px solid var(--card-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 0.65rem;
-      border-top: 1px solid var(--card-border);
+      gap: 0.5rem;
     }
 
     .modal-footer-btns {
@@ -1104,47 +1029,49 @@
       gap: 0.5rem;
     }
 
-    /* Quick Notes Modal */
+    /* Notes Area in Modal */
     .notes-textarea {
       width: 100%;
-      height: 220px;
-      background: rgba(0, 0, 0, 0.2);
+      min-height: 200px;
+      background: rgba(0, 0, 0, 0.25);
       border: 1px solid var(--card-border);
       border-radius: 0.75rem;
-      color: var(--text);
       padding: 0.85rem;
-      font-size: 0.9rem;
-      resize: none;
+      color: var(--text);
+      font-family: monospace;
+      font-size: 0.85rem;
+      resize: vertical;
       outline: none;
-      font-family: inherit;
     }
 
     .notes-textarea:focus {
       border-color: var(--primary);
     }
 
-    /* Toast Notification */
+    /* Toast */
     .toast {
       position: fixed;
-      bottom: calc(2rem + env(safe-area-inset-bottom));
+      bottom: 2rem;
       left: 50%;
       transform: translateX(-50%) translateY(100px);
-      background: rgba(30, 35, 45, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      color: #fff;
+      background: rgba(22, 27, 34, 0.95);
+      border: 1px solid var(--card-border);
+      color: var(--text);
       padding: 0.65rem 1.25rem;
       border-radius: 999px;
-      font-size: 0.825rem;
-      font-weight: 500;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(12px);
-      transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      font-size: 0.85rem;
+      font-weight: 600;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(16px);
       z-index: 2000;
+      opacity: 0;
       pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
     .toast.show {
       transform: translateX(-50%) translateY(0);
+      opacity: 1;
     }
   </style>
 </head>
@@ -1158,7 +1085,7 @@
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
           <h1>LocalShare</h1>
-          <p>Direct File Transfer • Local Wi-Fi &amp; Internet</p>
+          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery</p>
         </div>
       </div>
       <div class="header-actions">
@@ -1171,70 +1098,65 @@
       </div>
     </header>
 
-    <!-- Mode Switcher (Local Wi-Fi vs Over Internet) -->
-    <div class="mode-switcher">
-      <button class="mode-btn active" id="btnModeLocal">
-        <span>⚡</span> Local Wi-Fi (Offline)
-      </button>
-      <button class="mode-btn" id="btnModeInternet">
-        <span>🌐</span> Over Internet (Worldwide P2P)
-      </button>
-    </div>
-
-    <!-- Mode 1: Local Wi-Fi Connection Banner -->
-    <section class="connection-banner" id="localBanner">
+    <!-- Connection & Network Status Banner -->
+    <section class="connection-banner" id="networkBanner">
       <div class="conn-info">
         <div class="status-indicator">
           <span class="status-dot"></span>
-          <span id="statusText">Local Server Online</span>
+          <span id="statusText">Wi-Fi Auto-Discovery Active</span>
         </div>
         <div class="network-badge" id="wifiBadgeContainer">
-          <span>📶 Wi-Fi:</span> <strong id="wifiSsidName">Scanning...</strong>
+          <span>📶 Network:</span> <strong id="wifiSsidName">Scanning Network...</strong>
         </div>
       </div>
-      <div class="url-chip" id="urlChip" title="Click to copy local link">
-        <span>🌐</span>
-        <span id="serverUrlText">http://192.168.1.4:8080</span>
-        <span style="font-size:0.75rem; opacity:0.8;">📋 Copy Link</span>
+      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <div class="url-chip" id="urlChip" title="Click to copy link">
+          <span>🌐</span>
+          <span id="serverUrlText">https://transfer.digitalsoan.com</span>
+          <span style="font-size:0.75rem; opacity:0.8;">📋 Copy Link</span>
+        </div>
+        <button class="btn-header" id="btnToggleRemote" style="font-size:0.8rem; padding:0.4rem 0.75rem;">
+          <span>🌍</span> Remote Friend PIN
+        </button>
       </div>
     </section>
 
-    <!-- Mode 2: Over Internet Room Card -->
-    <section class="internet-room-card" id="internetRoomCard">
-      <div class="room-header">
-        <div class="room-code-group">
-          <span style="font-size:0.85rem; font-weight:600;">Your Room PIN:</span>
-          <span class="room-code-pill" id="myRoomCode">CONNECTING...</span>
-          <button class="btn-sm" id="btnCopyInvite" style="background:var(--primary); color:#fff; border-color:var(--primary);">
-            📋 Copy Invite Link
-          </button>
-        </div>
-        <div class="room-join-row">
-          <input type="text" class="room-input" id="joinRoomInput" placeholder="ENTER PIN (E.G. 4821)" maxlength="12">
-          <button class="btn-sm" id="btnJoinRoom" style="background:var(--purple); color:#fff; border-color:var(--purple);">
-            🔗 Connect Friend
-          </button>
-        </div>
-      </div>
-      <div style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:0.4rem;">
-        <span>🔒 End-to-End Encrypted WebRTC P2P</span> • <span>No server stores your files</span> • <span>Works anywhere in the world!</span>
-      </div>
-    </section>
-
-    <!-- Connected Devices (Radar & List) -->
+    <!-- Connected Devices (Auto-Discovered & Remote) -->
     <section class="devices-section">
       <div class="devices-header">
         <div class="devices-title">
-          <span id="devicesSectionTitle">📡 Connected Devices</span>
+          <span id="devicesSectionTitle">📡 Connected Devices (Auto-Discovered on Wi-Fi)</span>
         </div>
         <span class="devices-badge" id="devicesCountBadge">1 Online</span>
       </div>
       <div class="devices-grid" id="devicesGrid">
         <!-- Rendered dynamically -->
       </div>
-      <div class="radar-box" id="radarWaitingBox" style="display:none;">
+      <div class="radar-box" id="radarWaitingBox" style="display:flex;">
         <div class="radar-spinner"></div>
-        <span id="radarWaitingText">Waiting for other devices... Open this page on your iPhone or share invite link with a friend!</span>
+        <span id="radarWaitingText">Scanning your Wi-Fi network for nearby devices... Open this page on your iPhone or PC to connect automatically!</span>
+      </div>
+    </section>
+
+    <!-- Remote Friend Connection Card (Collapsible) -->
+    <section class="internet-room-card" id="remoteFriendDrawer" style="display:none;">
+      <div class="room-header">
+        <div class="room-code-group">
+          <span style="font-size:0.85rem; font-weight:600; color:var(--text-muted);">Your PIN:</span>
+          <span class="room-code-pill" id="myRoomCode">....</span>
+          <button class="btn-sm" id="btnCopyInvite" style="background:var(--primary); color:#fff; border-color:var(--primary);">
+            📋 Copy Invite Link
+          </button>
+        </div>
+        <div class="room-join-row">
+          <input type="text" class="room-input" id="joinRoomInput" placeholder="FRIEND'S PIN" maxlength="12">
+          <button class="btn-sm" id="btnJoinRoom" style="background:var(--purple); color:#fff; border-color:var(--purple);">
+            🔗 Connect Friend
+          </button>
+        </div>
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:0.4rem;">
+        <span>🔒 Same Wi-Fi devices appear automatically above. Use PIN only if your friend is in another city or on mobile data.</span>
       </div>
     </section>
 
@@ -1325,7 +1247,7 @@
       </div>
 
       <!-- Empty State -->
-      <div class="empty-state" id="emptyState" style="display:none;">
+      <div class="empty-state" id="emptyState" style="display:flex;">
         <span class="empty-icon">📭</span>
         <p>No files shared yet.</p>
         <span style="font-size: 0.8rem; opacity: 0.7;">Send photos, videos, or documents to see them here.</span>
@@ -1380,27 +1302,33 @@
     </div>
   </div>
 
-  <!-- Toast -->
+  <!-- Toast Notification -->
   <div class="toast" id="toast">Link copied to clipboard!</div>
 
   <script>
-    // State
-    let activeMode = 'local'; // 'local' or 'internet'
+    // ==========================================================
+    // 1. STATE & DEVICE IDENTIFICATION
+    // ==========================================================
+    const isLocalServerHost = ['localhost', '127.0.0.1'].includes(window.location.hostname) || 
+                              window.location.hostname.startsWith('192.168.') || 
+                              window.location.hostname.startsWith('10.') || 
+                              window.location.hostname.startsWith('172.');
+
     let allFiles = [];
     let p2pReceivedFiles = [];
     let currentFilter = 'all';
     let searchQuery = '';
-    let currentPrimaryIp = window.location.hostname || '192.168.1.4';
-    let currentPort = window.location.port || '8080';
     let currentPreviewFileName = '';
+    let selectedTargetPeerId = null;
 
-    // Device Identification
+    // Persistent unique Device ID
     let myDeviceId = localStorage.getItem('localshare_device_id');
     if (!myDeviceId) {
       myDeviceId = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
       localStorage.setItem('localshare_device_id', myDeviceId);
     }
 
+    // OS & Device Detection
     const ua = navigator.userAgent || '';
     const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isAndroid = /Android/.test(ua);
@@ -1436,15 +1364,38 @@
 
     let myDeviceName = localStorage.getItem('localshare_device_name') || myDefaultName;
 
-    // Elements
-    const btnModeLocal = document.getElementById('btnModeLocal');
-    const btnModeInternet = document.getElementById('btnModeInternet');
-    const localBanner = document.getElementById('localBanner');
-    const internetRoomCard = document.getElementById('internetRoomCard');
-    const myRoomCodeEl = document.getElementById('myRoomCode');
+    // 4-Digit PIN for Remote Friend Pairing
+    let myShortPin = localStorage.getItem('localshare_pin');
+    if (!myShortPin || myShortPin.length < 4) {
+      myShortPin = Math.floor(1000 + Math.random() * 9000).toString();
+      localStorage.setItem('localshare_pin', myShortPin);
+    }
+    let myPeerId = 'dsoan_' + myShortPin;
+
+    // Discovery & Network state
+    let myPublicIp = '';
+    let myNetworkRoom = 'ls_net_global';
+    let mqttClient = null;
+    let discoveredDevices = {}; // deviceId -> { id, peerId, pin, name, os, type, icon, ip, lastSeen }
+    let peer = null;
+    let peerConnections = {}; // peerId -> { conn, name, os, type, icon }
+
+    // DOM Elements
+    const networkBanner = document.getElementById('networkBanner');
+    const statusText = document.getElementById('statusText');
+    const wifiSsidName = document.getElementById('wifiSsidName');
+    const urlChip = document.getElementById('urlChip');
+    const serverUrlText = document.getElementById('serverUrlText');
+    const btnToggleRemote = document.getElementById('btnToggleRemote');
+    const remoteFriendDrawer = document.getElementById('remoteFriendDrawer');
+    const myRoomCode = document.getElementById('myRoomCode');
     const btnCopyInvite = document.getElementById('btnCopyInvite');
     const joinRoomInput = document.getElementById('joinRoomInput');
     const btnJoinRoom = document.getElementById('btnJoinRoom');
+    const devicesGrid = document.getElementById('devicesGrid');
+    const devicesCountBadge = document.getElementById('devicesCountBadge');
+    const radarWaitingBox = document.getElementById('radarWaitingBox');
+    const radarWaitingText = document.getElementById('radarWaitingText');
 
     const mediaInput = document.getElementById('mediaInput');
     const docInput = document.getElementById('docInput');
@@ -1456,22 +1407,22 @@
     const progressTransferInfo = document.getElementById('progressTransferInfo');
     const progressSpeed = document.getElementById('progressSpeed');
     const progressEta = document.getElementById('progressEta');
+
     const fileGrid = document.getElementById('fileGrid');
     const emptyState = document.getElementById('emptyState');
     const fileCountBadge = document.getElementById('fileCountBadge');
     const searchBox = document.getElementById('searchBox');
     const btnRefresh = document.getElementById('btnRefresh');
     const btnOpenFolder = document.getElementById('btnOpenFolder');
-    const urlChip = document.getElementById('urlChip');
-    const serverUrlText = document.getElementById('serverUrlText');
-    const wifiSsidName = document.getElementById('wifiSsidName');
     const toast = document.getElementById('toast');
+
     const btnNotes = document.getElementById('btnNotes');
     const notesModal = document.getElementById('notesModal');
     const btnCloseNotes = document.getElementById('btnCloseNotes');
     const notesText = document.getElementById('notesText');
     const btnSaveNote = document.getElementById('btnSaveNote');
     const btnCopyNote = document.getElementById('btnCopyNote');
+
     const previewModal = document.getElementById('previewModal');
     const btnClosePreview = document.getElementById('btnClosePreview');
     const previewContent = document.getElementById('previewContent');
@@ -1480,20 +1431,13 @@
     const btnModalDownload = document.getElementById('btnModalDownload');
     const btnModalGallery = document.getElementById('btnModalGallery');
     const btnThemeToggle = document.getElementById('btnThemeToggle');
-    const devicesGrid = document.getElementById('devicesGrid');
-    const devicesCountBadge = document.getElementById('devicesCountBadge');
-    const radarWaitingBox = document.getElementById('radarWaitingBox');
-    const radarWaitingText = document.getElementById('radarWaitingText');
 
-    // WebRTC PeerJS State for Over-The-Internet
-    let peer = null;
-    let myPeerId = '';
-    let myShortPin = '';
-    let peerConnections = {}; // targetPeerId -> { conn, name, os, type }
+    // Display current link
+    serverUrlText.textContent = window.location.origin || 'https://transfer.digitalsoan.com';
+    myRoomCode.textContent = myShortPin;
 
-    // Generate readable 4-digit PIN for internet sharing
-    function generatePin() {
-      return Math.floor(1000 + Math.random() * 9000).toString();
+    if (!isLocalServerHost) {
+      btnOpenFolder.style.display = 'none';
     }
 
     // Audio Chime
@@ -1523,7 +1467,7 @@
     }
 
     function formatBytes(bytes) {
-      if (bytes === 0) return '0 B';
+      if (!bytes || bytes === 0) return '0 B';
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -1539,33 +1483,226 @@
     }
 
     // ==========================================================
-    // 🌐 OVER-THE-INTERNET WEBRTC ENGINE (PEERJS)
+    // 2. NETWORK DISCOVERY & PUBLIC IP HASHING
+    // ==========================================================
+    async function detectPublicNetwork() {
+      // 1. Try ipify
+      try {
+        const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ip) {
+            setNetworkInfo(data.ip);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // 2. Try ipapi.co
+      try {
+        const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.ip) {
+            setNetworkInfo(data.ip);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // 3. Try icanhazip
+      try {
+        const res = await fetch('https://icanhazip.com/', { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const ip = (await res.text()).trim();
+          if (ip) {
+            setNetworkInfo(ip);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // If offline or failed, fallback to local host
+      setNetworkInfo(isLocalServerHost ? window.location.hostname : 'local_network');
+    }
+
+    function setNetworkInfo(ip) {
+      myPublicIp = ip;
+      myNetworkRoom = 'ls_net_' + myPublicIp.replace(/[^a-zA-Z0-9]/g, '_');
+      wifiSsidName.textContent = isLocalServerHost ? 'Local Wi-Fi (' + ip + ')' : 'Same Wi-Fi Network';
+      startNetworkDiscovery();
+    }
+
+    function startNetworkDiscovery() {
+      if (typeof Paho === 'undefined' || !Paho.MQTT) {
+        console.warn('Paho MQTT unavailable, using PeerJS slot pairing fallback');
+        return;
+      }
+
+      const clientId = 'ls_' + myDeviceId + '_' + Math.random().toString(36).substring(2, 6);
+      const brokerHost = 'broker.emqx.io';
+      const brokerPort = 8084; // Secure WSS
+      const brokerPath = '/mqtt';
+
+      try {
+        mqttClient = new Paho.MQTT.Client(brokerHost, brokerPort, brokerPath, clientId);
+
+        mqttClient.onConnectionLost = (err) => {
+          console.warn('MQTT Connection lost:', err.errorMessage);
+          setTimeout(startNetworkDiscovery, 4000);
+        };
+
+        mqttClient.onMessageArrived = (message) => {
+          try {
+            const data = JSON.parse(message.payloadString);
+            handleNetworkPresenceMessage(data);
+          } catch (e) {}
+        };
+
+        mqttClient.connect({
+          useSSL: true,
+          timeout: 6,
+          keepAliveInterval: 30,
+          cleanSession: true,
+          onSuccess: () => {
+            statusText.textContent = 'Auto-Discovery Active';
+            const topic = 'digitalsoan_transfer/' + myNetworkRoom;
+            mqttClient.subscribe(topic, { qos: 0 });
+
+            broadcastPresence('join');
+
+            if (!window.presenceInterval) {
+              window.presenceInterval = setInterval(() => {
+                broadcastPresence('ping');
+                pruneStaleDevices();
+              }, 2500);
+            }
+          },
+          onFailure: (err) => {
+            console.warn('EMQX connect failed, trying HiveMQ fallback...', err);
+            tryHiveMqFallback(clientId);
+          }
+        });
+      } catch (e) {
+        console.error('MQTT setup error:', e);
+      }
+    }
+
+    function tryHiveMqFallback(clientId) {
+      try {
+        mqttClient = new Paho.MQTT.Client('broker.hivemq.com', 8884, '/mqtt', clientId);
+        mqttClient.onMessageArrived = (message) => {
+          try {
+            const data = JSON.parse(message.payloadString);
+            handleNetworkPresenceMessage(data);
+          } catch (e) {}
+        };
+        mqttClient.connect({
+          useSSL: true,
+          timeout: 6,
+          cleanSession: true,
+          onSuccess: () => {
+            const topic = 'digitalsoan_transfer/' + myNetworkRoom;
+            mqttClient.subscribe(topic, { qos: 0 });
+            broadcastPresence('join');
+            if (!window.presenceInterval) {
+              window.presenceInterval = setInterval(() => {
+                broadcastPresence('ping');
+                pruneStaleDevices();
+              }, 2500);
+            }
+          }
+        });
+      } catch (e) {}
+    }
+
+    function broadcastPresence(action = 'ping') {
+      if (!mqttClient || !mqttClient.isConnected()) return;
+      const payload = {
+        action,
+        id: myDeviceId,
+        peerId: myPeerId,
+        pin: myShortPin,
+        name: myDeviceName,
+        os: myDeviceOs,
+        type: myDeviceType,
+        icon: myDeviceIcon,
+        ip: myPublicIp,
+        ts: Date.now()
+      };
+      const message = new Paho.MQTT.Message(JSON.stringify(payload));
+      message.destinationName = 'digitalsoan_transfer/' + myNetworkRoom;
+      mqttClient.send(message);
+    }
+
+    function handleNetworkPresenceMessage(data) {
+      if (!data || !data.id || data.id === myDeviceId) return;
+
+      if (data.action === 'bye') {
+        delete discoveredDevices[data.id];
+        renderDevicesList();
+        return;
+      }
+
+      const isNew = !discoveredDevices[data.id];
+      discoveredDevices[data.id] = {
+        ...data,
+        lastSeen: Date.now()
+      };
+
+      if (isNew) {
+        playChime();
+        showToast(`Found ${data.name} on same Wi-Fi!`);
+        // Automatic WebRTC connection initiation with tie-breaker
+        if (data.peerId && (!peerConnections[data.peerId] || !peerConnections[data.peerId].conn)) {
+          if (myPeerId < data.peerId) {
+            connectToRemotePeer(data.peerId, false);
+          }
+        }
+      }
+
+      renderDevicesList();
+    }
+
+    function pruneStaleDevices() {
+      const now = Date.now();
+      let changed = false;
+      for (const [id, dev] of Object.entries(discoveredDevices)) {
+        if (now - dev.lastSeen > 8000) {
+          delete discoveredDevices[id];
+          changed = true;
+        }
+      }
+      if (changed) {
+        renderDevicesList();
+      }
+    }
+
+    window.addEventListener('beforeunload', () => {
+      broadcastPresence('bye');
+    });
+
+    // ==========================================================
+    // 3. WEBRTC ENGINE (PEERJS)
     // ==========================================================
     function initInternetPeer() {
       if (peer) return;
 
-      myShortPin = localStorage.getItem('localshare_pin');
-      if (!myShortPin) {
-        myShortPin = generatePin();
-        localStorage.setItem('localshare_pin', myShortPin);
-      }
-      myPeerId = 'dsoan_' + myShortPin;
-
       try {
-        peer = new Peer(myPeerId, {
-          debug: 1
-        });
+        peer = new Peer(myPeerId, { debug: 1 });
 
         peer.on('open', (id) => {
-          myRoomCodeEl.textContent = myShortPin;
-          showToast(`Connected to Internet Network! PIN: ${myShortPin}`);
+          myRoomCode.textContent = myShortPin;
 
-          // Check if URL has join hash e.g. #4821
+          // Check if URL hash has invite PIN (e.g. #4821)
           const hash = window.location.hash.replace('#', '').trim();
           if (hash && hash !== myShortPin && /^\d{4,6}$/.test(hash)) {
             joinRoomInput.value = hash;
-            connectToRemotePeer('dsoan_' + hash);
+            connectToRemotePeer('dsoan_' + hash, true);
           }
+
+          // Trigger network discovery
+          detectPublicNetwork();
         });
 
         peer.on('connection', (conn) => {
@@ -1573,13 +1710,13 @@
         });
 
         peer.on('error', (err) => {
-          console.warn('PeerJS error:', err);
+          console.warn('PeerJS event:', err.type, err);
           if (err.type === 'unavailable-id') {
-            myShortPin = generatePin();
+            myShortPin = Math.floor(1000 + Math.random() * 9000).toString();
             localStorage.setItem('localshare_pin', myShortPin);
             myPeerId = 'dsoan_' + myShortPin;
             peer = null;
-            setTimeout(initInternetPeer, 1000);
+            setTimeout(initInternetPeer, 800);
           }
         });
       } catch (e) {
@@ -1587,15 +1724,26 @@
       }
     }
 
-    function connectToRemotePeer(targetPeerId) {
-      if (!peer) return;
+    function connectToRemotePeer(targetPeerId, isManual = false) {
+      if (!peer || !targetPeerId) return;
       if (targetPeerId === myPeerId) {
-        showToast("Cannot connect to your own PIN!");
+        if (isManual) showToast("Cannot connect to your own device PIN!");
         return;
       }
-      showToast("Connecting to friend over internet...");
+      if (peerConnections[targetPeerId] && peerConnections[targetPeerId].conn && peerConnections[targetPeerId].conn.open) {
+        if (isManual) showToast("Already connected!");
+        return;
+      }
+
+      if (isManual) showToast("Connecting to friend device...");
       const conn = peer.connect(targetPeerId, {
-        metadata: { name: myDeviceName, os: myDeviceOs, type: myDeviceType }
+        metadata: {
+          name: myDeviceName,
+          os: myDeviceOs,
+          type: myDeviceType,
+          icon: myDeviceIcon,
+          pin: myShortPin
+        }
       });
       setupConnectionEvents(conn);
     }
@@ -1604,18 +1752,21 @@
       let incomingFileMeta = null;
       let incomingChunks = [];
       let receivedBytes = 0;
+      let startTime = 0;
 
       conn.on('open', () => {
-        const friendName = (conn.metadata && conn.metadata.name) || 'Friend Device';
+        const meta = conn.metadata || {};
+        const friendName = meta.name || 'Friend Device';
         peerConnections[conn.peer] = {
           conn,
           name: friendName,
-          os: (conn.metadata && conn.metadata.os) || 'Remote',
-          type: (conn.metadata && conn.metadata.type) || 'mobile'
+          os: meta.os || 'Remote',
+          type: meta.type || 'mobile',
+          icon: meta.icon || ((meta.type === 'mobile' || meta.os === 'iOS' || meta.os === 'Android') ? '📱' : '💻')
         };
         showToast(`Connected to ${friendName}!`);
         playChime();
-        renderInternetDevices();
+        renderDevicesList();
       });
 
       conn.on('data', async (data) => {
@@ -1624,6 +1775,7 @@
           incomingFileMeta = data;
           incomingChunks = [];
           receivedBytes = 0;
+          startTime = Date.now();
           uploadCard.style.display = 'flex';
           progressFileName.textContent = `Receiving: ${data.name}`;
           progressBarFill.style.width = '0%';
@@ -1631,8 +1783,22 @@
           return;
         }
 
-        // 2. Completion packet
-        if (data && data.type === 'file-complete') {
+        // 2. Binary chunk
+        if (data instanceof ArrayBuffer && incomingFileMeta) {
+          incomingChunks.push(data);
+          receivedBytes += data.byteLength;
+          const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
+          progressBarFill.style.width = percent + '%';
+          progressPercent.textContent = percent + '%';
+          const elapsedSec = (Date.now() - startTime) / 1000;
+          const speedBps = elapsedSec > 0 ? receivedBytes / elapsedSec : 0;
+          progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
+          progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+          return;
+        }
+
+        // 3. File complete packet
+        if (data && data.type === 'file-complete' && incomingFileMeta) {
           uploadCard.style.display = 'none';
           const blob = new Blob(incomingChunks, { type: incomingFileMeta.mime || 'application/octet-stream' });
           const objectUrl = URL.createObjectURL(blob);
@@ -1657,34 +1823,71 @@
           renderFiles();
           incomingFileMeta = null;
           incomingChunks = [];
-          return;
-        }
-
-        // 3. Binary file chunk
-        if (data instanceof ArrayBuffer && incomingFileMeta) {
-          incomingChunks.push(data);
-          receivedBytes += data.byteLength;
-          const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
-          progressBarFill.style.width = percent + '%';
-          progressPercent.textContent = percent + '%';
-          progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
         }
       });
 
       conn.on('close', () => {
         delete peerConnections[conn.peer];
-        renderInternetDevices();
+        renderDevicesList();
+      });
+
+      conn.on('error', () => {
+        delete peerConnections[conn.peer];
+        renderDevicesList();
       });
     }
 
-    function renderInternetDevices() {
-      const peers = Object.values(peerConnections);
-      const count = peers.length + 1; // plus self
-      devicesCountBadge.textContent = `${count} Online`;
+    // ==========================================================
+    // 4. RENDERING DEVICES LIST (AUTO-DISCOVERED + P2P)
+    // ==========================================================
+    function renderDevicesList() {
+      const activePeers = Object.values(peerConnections);
+      const discovered = Object.values(discoveredDevices);
 
-      if (peers.length === 0) {
+      const allRemote = [];
+      const seenPeerIds = new Set();
+
+      // Discovered devices on same Wi-Fi
+      discovered.forEach(d => {
+        if (!d.peerId) return;
+        seenPeerIds.add(d.peerId);
+        const hasP2p = !!(peerConnections[d.peerId] && peerConnections[d.peerId].conn && peerConnections[d.peerId].conn.open);
+        allRemote.push({
+          id: d.id,
+          peerId: d.peerId,
+          name: d.name,
+          os: d.os,
+          type: d.type,
+          icon: d.icon || ((d.type === 'mobile' || d.os === 'iOS' || d.os === 'Android') ? '📱' : '💻'),
+          pin: d.pin,
+          isP2pReady: hasP2p,
+          source: 'wifi'
+        });
+      });
+
+      // Active peers joined via PIN / Invite link
+      activePeers.forEach(p => {
+        if (!p.conn || !p.conn.open) return;
+        if (!seenPeerIds.has(p.conn.peer)) {
+          allRemote.push({
+            id: p.conn.peer,
+            peerId: p.conn.peer,
+            name: p.name || 'Friend Device',
+            os: p.os || 'Remote',
+            type: p.type || 'mobile',
+            icon: p.icon || ((p.type === 'mobile' || p.os === 'iOS' || p.os === 'Android') ? '📱' : '💻'),
+            isP2pReady: true,
+            source: 'internet'
+          });
+        }
+      });
+
+      const totalCount = allRemote.length + 1; // plus self
+      devicesCountBadge.textContent = `${totalCount} Online`;
+
+      if (allRemote.length === 0) {
         radarWaitingBox.style.display = 'flex';
-        radarWaitingText.textContent = `Share your PIN (${myShortPin}) or invite link with your friend to connect!`;
+        radarWaitingText.textContent = "Scanning your Wi-Fi network... Open https://transfer.digitalsoan.com on your phone to connect automatically!";
       } else {
         radarWaitingBox.style.display = 'none';
       }
@@ -1707,24 +1910,28 @@
         </div>
       `;
 
-      peers.forEach(p => {
-        const icon = (p.type === 'mobile' || p.os === 'iOS' || p.os === 'Android') ? '📱' : '💻';
+      allRemote.forEach(d => {
+        const isReady = d.isP2pReady;
+        const tagText = isReady ? '🟢 Ready to Transfer' : '🟡 Connecting...';
+        const tagClass = isReady ? 'device-tag online' : 'device-tag';
+        const sourceLabel = d.source === 'wifi' ? 'Same Wi-Fi' : 'Over Internet';
+
         html += `
-          <div class="device-card internet-device">
+          <div class="device-card other-device" data-peer="${d.peerId}">
             <div class="device-icon-box">
-              <span>${icon}</span>
+              <span>${d.icon}</span>
               <span class="device-online-dot"></span>
             </div>
             <div class="device-details">
               <div class="device-name-row">
-                <span class="device-name">${p.name}</span>
-                <span class="device-tag online">Over Internet</span>
+                <span class="device-name" title="${d.name}">${d.name}</span>
+                <span class="${tagClass}">${tagText}</span>
               </div>
               <div class="device-meta">
-                <span>${p.os}</span> • <span>Connected &amp; Ready</span>
+                <span>${d.os}</span> • <span>${sourceLabel}</span>
               </div>
             </div>
-            <button class="btn-send-to-device" onclick="triggerSendToDevice('${p.conn.peer}')">
+            <button class="btn-send-to-device" onclick="triggerSendToDevice('${d.peerId}')">
               <span>📤</span> Send File
             </button>
           </div>
@@ -1734,11 +1941,40 @@
       devicesGrid.innerHTML = html;
     }
 
-    // P2P Chunked Sender over WebRTC DataChannel (with backpressure flow control)
-    async function sendFilesOverP2P(files) {
-      const activePeers = Object.values(peerConnections);
-      if (activePeers.length === 0) {
-        showToast("No friend connected! Connect via PIN first.");
+    // ==========================================================
+    // 5. P2P FILE SENDING (WEBRTC DATA CHANNEL + CHUNKING)
+    // ==========================================================
+    window.triggerSendToDevice = function(peerId) {
+      selectedTargetPeerId = peerId;
+      if (isIOS || isAndroid) {
+        mediaInput.click();
+      } else {
+        docInput.click();
+      }
+    };
+
+    async function handleUpload(files) {
+      if (!files || files.length === 0) return;
+
+      // Check if we are running strictly offline local desktop server
+      if (isLocalServerHost && Object.keys(peerConnections).length === 0 && Object.keys(discoveredDevices).length === 0) {
+        await uploadFilesLocal(files);
+      } else {
+        await sendFilesOverP2P(files, selectedTargetPeerId);
+      }
+      selectedTargetPeerId = null;
+    }
+
+    async function sendFilesOverP2P(files, targetPeerId) {
+      let targets = [];
+      if (targetPeerId && peerConnections[targetPeerId] && peerConnections[targetPeerId].conn && peerConnections[targetPeerId].conn.open) {
+        targets = [peerConnections[targetPeerId]];
+      } else {
+        targets = Object.values(peerConnections).filter(p => p.conn && p.conn.open);
+      }
+
+      if (targets.length === 0) {
+        showToast("Waiting for friend device to connect! Open page on iPhone.");
         return;
       }
 
@@ -1746,14 +1982,14 @@
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        for (const p of activePeers) {
-          await sendSingleFileOverP2P(p.conn, file, i + 1, files.length);
+        for (const target of targets) {
+          await sendSingleFileOverP2P(target.conn, file, i + 1, files.length);
         }
       }
 
       uploadCard.style.display = 'none';
       playChime();
-      showToast('All files sent over internet!');
+      showToast('All files sent successfully!');
     }
 
     async function sendSingleFileOverP2P(conn, file, currentIdx, totalFiles) {
@@ -1762,7 +1998,6 @@
       progressBarFill.style.width = '0%';
       progressPercent.textContent = '0%';
 
-      // 1. Send meta
       conn.send({
         type: 'file-meta',
         name: file.name,
@@ -1774,7 +2009,7 @@
       const startTime = Date.now();
 
       while (offset < file.size) {
-        // Backpressure check: wait if buffer exceeds 1MB
+        // Backpressure check to prevent packet drop
         if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) {
           await new Promise(r => {
             conn.dataChannel.onbufferedamountlow = () => {
@@ -1799,134 +2034,18 @@
         progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
       }
 
-      // 2. Send complete
       conn.send({ type: 'file-complete' });
     }
 
     // ==========================================================
-    // ⚡ LOCAL WI-FI BACKEND ENGINE
+    // 6. SAVE TO GALLERY (APPLE PHOTOS VIA WEB SHARE API)
     // ==========================================================
-    async function fetchServerInfo() {
-      try {
-        const res = await fetch('/api/info');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.success) {
-          if (data.primaryIp) currentPrimaryIp = data.primaryIp;
-          if (data.port) currentPort = data.port;
-          const fullUrl = `http://${currentPrimaryIp}:${currentPort}`;
-          serverUrlText.textContent = fullUrl;
-
-          if (data.wifiSsid) {
-            wifiSsidName.textContent = data.wifiSsid;
-          } else {
-            wifiSsidName.textContent = 'Ethernet / LAN';
-          }
-        }
-      } catch (e) {
-        serverUrlText.textContent = window.location.origin || 'http://192.168.1.4:8080';
-        wifiSsidName.textContent = 'Local Wi-Fi';
-      }
-    }
-
-    async function sendHeartbeat() {
-      if (activeMode !== 'local') return;
-      try {
-        const res = await fetch('/api/heartbeat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            deviceId: myDeviceId,
-            name: myDeviceName,
-            type: myDeviceType,
-            os: myDeviceOs,
-            browser: isIOS ? 'Safari' : 'Browser'
-          })
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.success && Array.isArray(data.devices)) {
-          renderLocalDevices(data.devices);
-        }
-      } catch (e) {}
-    }
-
-    function renderLocalDevices(devices) {
-      const count = devices.length;
-      devicesCountBadge.textContent = `${count} Online`;
-
-      const otherDevices = devices.filter(d => d.id !== myDeviceId);
-      if (otherDevices.length === 0) {
-        radarWaitingBox.style.display = 'flex';
-        radarWaitingText.textContent = "Waiting for other devices on local Wi-Fi... Open this link on your iPhone or PC!";
-      } else {
-        radarWaitingBox.style.display = 'none';
-      }
-
-      devicesGrid.innerHTML = devices.map(d => {
-        const isMe = d.id === myDeviceId;
-        const icon = (d.type === 'mobile' || d.os === 'iOS' || d.os === 'Android') ? '📱' : '💻';
-        const cardClass = isMe ? 'device-card this-device' : 'device-card other-device';
-        const targetLabel = isMe ? '(This Device)' : 'Active Now';
-        const targetIp = d.ip === '127.0.0.1' ? currentPrimaryIp : d.ip;
-
-        let actionBtn = '';
-        if (!isMe) {
-          actionBtn = `
-            <button class="btn-send-to-device" onclick="triggerSendToDevice('${d.id}')">
-              <span>📤</span> Send File
-            </button>
-          `;
-        } else {
-          actionBtn = `
-            <span style="font-size:0.75rem; color:var(--text-muted); padding:0.4rem 0.6rem;">You</span>
-          `;
-        }
-
-        return `
-          <div class="${cardClass}">
-            <div class="device-icon-box">
-              <span>${icon}</span>
-              <span class="device-online-dot"></span>
-            </div>
-            <div class="device-details">
-              <div class="device-name-row">
-                <span class="device-name" title="${d.name}">${d.name}</span>
-                <span class="device-tag ${isMe ? '' : 'online'}">${targetLabel}</span>
-              </div>
-              <div class="device-meta">
-                <span>${d.os}</span> • <span>${targetIp}</span>
-              </div>
-            </div>
-            ${actionBtn}
-          </div>
-        `;
-      }).join('');
-    }
-
-    async function fetchFiles() {
-      if (activeMode !== 'local') return;
-      try {
-        const res = await fetch('/api/files');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.success && Array.isArray(data.files)) {
-          allFiles = data.files;
-          renderFiles();
-        }
-      } catch (e) {
-        console.error('Error fetching files:', e);
-      }
-    }
-
-    // 🌟 SAVE TO GALLERY (Apple Photos / Camera Roll via Native Web Share Sheet)
     window.saveToGallery = async function(fileName) {
       showToast('Preparing for Photos Gallery...');
 
       let blob = null;
       let mime = 'image/jpeg';
 
-      // Check if file is in local files or P2P files
       const p2pFile = p2pReceivedFiles.find(f => f.name === fileName);
       if (p2pFile && p2pFile.blobObj) {
         blob = p2pFile.blobObj;
@@ -1984,9 +2103,11 @@
       }
     };
 
-    // Render files grid (Combines local server files or P2P received files)
+    // ==========================================================
+    // 7. FILE LIST & PREVIEW
+    // ==========================================================
     function renderFiles() {
-      const sourceFiles = activeMode === 'internet' ? p2pReceivedFiles : allFiles;
+      const sourceFiles = isLocalServerHost && allFiles.length > 0 ? allFiles : p2pReceivedFiles;
 
       const filtered = sourceFiles.filter(f => {
         if (currentFilter === 'photo' && !f.isImage) return false;
@@ -2070,104 +2191,8 @@
       }).join('');
     }
 
-    // Unified Upload Handler
-    async function handleUpload(files) {
-      if (!files || files.length === 0) return;
-      if (activeMode === 'internet') {
-        await sendFilesOverP2P(files);
-      } else {
-        await uploadFilesLocal(files);
-      }
-    }
-
-    async function uploadFilesLocal(files) {
-      uploadCard.style.display = 'flex';
-      for (let i = 0; i < files.length; i++) {
-        await uploadSingleLocalFile(files[i], i + 1, files.length);
-      }
-      uploadCard.style.display = 'none';
-      playChime();
-      showToast('All files transferred to PC!');
-      fetchFiles();
-    }
-
-    async function uploadSingleLocalFile(file, currentIdx, totalFiles) {
-      const chunkSize = 4 * 1024 * 1024;
-      const totalChunks = Math.ceil(file.size / chunkSize) || 1;
-      const uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-
-      progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
-      progressBarFill.style.width = '0%';
-      progressPercent.textContent = '0%';
-
-      let bytesUploaded = 0;
-      const startTime = Date.now();
-
-      for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
-        const start = chunkIdx * chunkSize;
-        const end = Math.min(start + chunkSize, file.size);
-        const chunkBlob = file.slice(start, end);
-
-        const res = await fetch('/api/upload_chunk', {
-          method: 'POST',
-          headers: {
-            'X-Upload-Id': uploadId,
-            'X-File-Name': encodeURIComponent(file.name),
-            'X-Chunk-Index': chunkIdx.toString(),
-            'X-Total-Chunks': totalChunks.toString(),
-            'X-File-Size': file.size.toString()
-          },
-          body: chunkBlob
-        });
-
-        if (!res.ok) {
-          showToast(`Upload failed for ${file.name}`);
-          return;
-        }
-
-        bytesUploaded += (end - start);
-        const percent = Math.min(100, Math.round((bytesUploaded / file.size) * 100));
-        progressBarFill.style.width = percent + '%';
-        progressPercent.textContent = percent + '%';
-
-        const elapsedSec = (Date.now() - startTime) / 1000;
-        const speedBps = elapsedSec > 0 ? bytesUploaded / elapsedSec : 0;
-        progressTransferInfo.textContent = `${formatBytes(bytesUploaded)} / ${formatBytes(file.size)}`;
-        progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
-      }
-    }
-
-    // Delete file
-    async function deleteFile(fileName) {
-      if (activeMode === 'internet') {
-        p2pReceivedFiles = p2pReceivedFiles.filter(f => f.name !== fileName);
-        renderFiles();
-        showToast('Removed from list');
-        return;
-      }
-
-      if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
-      try {
-        const res = await fetch('/api/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file: fileName })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(`Deleted ${fileName}`);
-          fetchFiles();
-        } else {
-          showToast('Failed to delete file');
-        }
-      } catch (e) {
-        showToast('Error deleting file');
-      }
-    }
-
-    // Open Lightbox Preview
     function openPreview(fileName) {
-      const sourceFiles = activeMode === 'internet' ? p2pReceivedFiles : allFiles;
+      const sourceFiles = isLocalServerHost && allFiles.length > 0 ? allFiles : p2pReceivedFiles;
       const file = sourceFiles.find(f => f.name === fileName);
       if (!file) return;
 
@@ -2222,46 +2247,143 @@
       currentPreviewFileName = '';
     }
 
-    window.triggerSendToDevice = function(targetId) {
-      if (isIOS || isAndroid) {
-        mediaInput.click();
-      } else {
-        docInput.click();
+    function deleteFile(fileName) {
+      p2pReceivedFiles = p2pReceivedFiles.filter(f => f.name !== fileName);
+      if (isLocalServerHost) {
+        fetch('/api/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: fileName })
+        }).then(() => fetchLocalFiles());
       }
-    };
+      renderFiles();
+      showToast('File removed');
+    }
 
     // ==========================================================
-    // MODE SWITCHING LOGIC
+    // 8. LOCAL OFFLINE DESKTOP SERVER COMPATIBILITY (start_share.bat)
     // ==========================================================
-    function setMode(mode) {
-      activeMode = mode;
-      if (mode === 'internet') {
-        btnModeInternet.classList.add('active', 'internet-active');
-        btnModeLocal.classList.remove('active');
-        localBanner.style.display = 'none';
-        internetRoomCard.style.display = 'flex';
-        btnOpenFolder.style.display = 'none';
-        document.getElementById('devicesSectionTitle').textContent = '🌐 Connected Friends (Internet)';
-        initInternetPeer();
-        renderInternetDevices();
-        renderFiles();
-      } else {
-        btnModeLocal.classList.add('active');
-        btnModeInternet.classList.remove('active', 'internet-active');
-        localBanner.style.display = 'flex';
-        internetRoomCard.style.display = 'none';
-        btnOpenFolder.style.display = 'flex';
-        document.getElementById('devicesSectionTitle').textContent = '📡 Connected Devices (Local Wi-Fi)';
-        fetchServerInfo();
-        fetchFiles();
-        sendHeartbeat();
+    async function fetchLocalServerInfo() {
+      try {
+        const res = await fetch('/api/info');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success) {
+          if (data.wifiSsid) wifiSsidName.textContent = data.wifiSsid;
+          if (data.primaryIp) serverUrlText.textContent = `http://${data.primaryIp}:${data.port || 8080}`;
+        }
+      } catch (e) {}
+    }
+
+    async function fetchLocalFiles() {
+      try {
+        const res = await fetch('/api/files');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && Array.isArray(data.files)) {
+          allFiles = data.files;
+          renderFiles();
+        }
+      } catch (e) {}
+    }
+
+    async function sendLocalHeartbeat() {
+      try {
+        const res = await fetch('/api/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceId: myDeviceId,
+            name: myDeviceName,
+            type: myDeviceType,
+            os: myDeviceOs
+          })
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && Array.isArray(data.devices)) {
+          // Merge local server devices into discoveredDevices
+          data.devices.forEach(d => {
+            if (d.id !== myDeviceId) {
+              discoveredDevices[d.id] = {
+                id: d.id,
+                name: d.name,
+                os: d.os,
+                type: d.type,
+                lastSeen: Date.now()
+              };
+            }
+          });
+          renderDevicesList();
+        }
+      } catch (e) {}
+    }
+
+    async function uploadFilesLocal(files) {
+      uploadCard.style.display = 'flex';
+      for (let i = 0; i < files.length; i++) {
+        await uploadSingleLocalFile(files[i], i + 1, files.length);
+      }
+      uploadCard.style.display = 'none';
+      playChime();
+      showToast('All files saved to PC!');
+      fetchLocalFiles();
+    }
+
+    async function uploadSingleLocalFile(file, currentIdx, totalFiles) {
+      const chunkSize = 4 * 1024 * 1024;
+      const totalChunks = Math.ceil(file.size / chunkSize) || 1;
+      const uploadId = 'up_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
+      progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
+      progressBarFill.style.width = '0%';
+      progressPercent.textContent = '0%';
+
+      let bytesUploaded = 0;
+      const startTime = Date.now();
+
+      for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+        const start = chunkIdx * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunkBlob = file.slice(start, end);
+
+        const res = await fetch('/api/upload_chunk', {
+          method: 'POST',
+          headers: {
+            'X-Upload-Id': uploadId,
+            'X-File-Name': encodeURIComponent(file.name),
+            'X-Chunk-Index': chunkIdx.toString(),
+            'X-Total-Chunks': totalChunks.toString(),
+            'X-File-Size': file.size.toString()
+          },
+          body: chunkBlob
+        });
+
+        if (!res.ok) {
+          showToast(`Upload failed for ${file.name}`);
+          return;
+        }
+
+        bytesUploaded += (end - start);
+        const percent = Math.min(100, Math.round((bytesUploaded / file.size) * 100));
+        progressBarFill.style.width = percent + '%';
+        progressPercent.textContent = percent + '%';
+
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        const speedBps = elapsedSec > 0 ? bytesUploaded / elapsedSec : 0;
+        progressTransferInfo.textContent = `${formatBytes(bytesUploaded)} / ${formatBytes(file.size)}`;
+        progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
       }
     }
 
-    btnModeLocal.addEventListener('click', () => setMode('local'));
-    btnModeInternet.addEventListener('click', () => setMode('internet'));
+    // ==========================================================
+    // 9. EVENT LISTENERS & UI WIRING
+    // ==========================================================
+    btnToggleRemote.addEventListener('click', () => {
+      const isHidden = remoteFriendDrawer.style.display === 'none';
+      remoteFriendDrawer.style.display = isHidden ? 'flex' : 'none';
+    });
 
-    // Copy Invite Link for Internet Mode
     btnCopyInvite.addEventListener('click', () => {
       const inviteUrl = `${window.location.origin}${window.location.pathname}#${myShortPin}`;
       navigator.clipboard.writeText(inviteUrl).then(() => {
@@ -2274,13 +2396,21 @@
     btnJoinRoom.addEventListener('click', () => {
       const pin = joinRoomInput.value.trim();
       if (!pin) {
-        showToast('Please enter your friend\'s PIN');
+        showToast("Please enter friend's 4-digit PIN");
         return;
       }
-      connectToRemotePeer('dsoan_' + pin);
+      connectToRemotePeer('dsoan_' + pin, true);
     });
 
-    // Event Listeners
+    urlChip.addEventListener('click', () => {
+      const url = serverUrlText.textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        showToast(`Copied ${url} to clipboard!`);
+      }).catch(() => {
+        showToast(`Link: ${url}`);
+      });
+    });
+
     mediaInput.addEventListener('change', e => {
       handleUpload(e.target.files);
       e.target.value = '';
@@ -2331,12 +2461,12 @@
     });
 
     btnRefresh.addEventListener('click', () => {
-      if (activeMode === 'local') {
-        fetchFiles();
-        sendHeartbeat();
-      } else {
-        renderInternetDevices();
+      if (isLocalServerHost) {
+        fetchLocalFiles();
+        sendLocalHeartbeat();
       }
+      renderDevicesList();
+      renderFiles();
       showToast('Refreshed');
     });
 
@@ -2347,20 +2477,11 @@
         if (data.success) {
           showToast('Opened shared_files folder on PC');
         } else {
-          showToast('Folder is in E:\\shared_files');
+          showToast('Folder path: E:\\shared_files');
         }
       } catch (e) {
         showToast('Folder path: E:\\shared_files');
       }
-    });
-
-    urlChip.addEventListener('click', () => {
-      const url = serverUrlText.textContent;
-      navigator.clipboard.writeText(url).then(() => {
-        showToast(`Copied ${url} to clipboard!`);
-      }).catch(() => {
-        showToast(`Link: ${url}`);
-      });
     });
 
     btnClosePreview.addEventListener('click', closePreview);
@@ -2369,14 +2490,14 @@
     });
 
     btnNotes.addEventListener('click', async () => {
-      if (activeMode === 'local') {
+      if (isLocalServerHost) {
         try {
           const res = await fetch('/api/notes');
           const data = await res.json();
           notesText.value = data.note || '';
         } catch (e) {}
       } else {
-        notesText.value = localStorage.getItem('localshare_internet_notes') || '';
+        notesText.value = localStorage.getItem('localshare_notes') || '';
       }
       notesModal.style.display = 'flex';
     });
@@ -2390,21 +2511,17 @@
     });
 
     btnSaveNote.addEventListener('click', async () => {
-      if (activeMode === 'local') {
+      if (isLocalServerHost) {
         try {
           await fetch('/api/notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ note: notesText.value })
           });
-          showToast('Shared notes saved!');
-        } catch (e) {
-          showToast('Failed to save note');
-        }
-      } else {
-        localStorage.setItem('localshare_internet_notes', notesText.value);
-        showToast('Notes saved!');
+        } catch (e) {}
       }
+      localStorage.setItem('localshare_notes', notesText.value);
+      showToast('Notes saved!');
       notesModal.style.display = 'none';
     });
 
@@ -2426,17 +2543,18 @@
     document.body.setAttribute('data-theme', savedTheme);
     document.getElementById('themeIcon').textContent = savedTheme === 'light' ? '☀️' : '🌓';
 
-    // Auto-detect mode on startup:
-    // If hosted on web domain or URL hash exists, default to 'internet' mode!
-    const isPublicHost = !['localhost', '127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.startsWith('192.168.') && !window.location.hostname.startsWith('10.');
-    const hasHash = window.location.hash.length > 1;
+    // ==========================================================
+    // 10. BOOTSTRAP INITIALIZATION
+    // ==========================================================
+    renderDevicesList();
+    initInternetPeer();
 
-    if (isPublicHost || hasHash) {
-      setMode('internet');
-    } else {
-      setMode('local');
-      setInterval(sendHeartbeat, 2500);
-      setInterval(fetchFiles, 4000);
+    if (isLocalServerHost) {
+      fetchLocalServerInfo();
+      fetchLocalFiles();
+      sendLocalHeartbeat();
+      setInterval(sendLocalHeartbeat, 2500);
+      setInterval(fetchLocalFiles, 4000);
     }
   </script>
 </body>
