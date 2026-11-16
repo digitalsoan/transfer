@@ -632,6 +632,31 @@
       font-weight: 700;
     }
 
+    .btn-cancel-transfer {
+      background: rgba(255, 69, 58, 0.15);
+      border: 1px solid rgba(255, 69, 58, 0.35);
+      color: var(--danger);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.725rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .btn-cancel-transfer:hover {
+      background: rgba(255, 69, 58, 0.28);
+      border-color: var(--danger);
+    }
+
+    .btn-cancel-transfer:active {
+      transform: scale(var(--active-scale));
+    }
+
     .progress-bar-container {
       width: 100%;
       height: 8px;
@@ -1085,7 +1110,7 @@
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
           <h1>LocalShare</h1>
-          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.4 Resumable</span></p>
+          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.5</span></p>
         </div>
       </div>
       <div class="header-actions">
@@ -1200,7 +1225,12 @@
       <div class="upload-progress-card" id="uploadCard">
         <div class="progress-header">
           <span class="progress-filename" id="progressFileName">Sending file...</span>
-          <span class="progress-stats" id="progressPercent">0%</span>
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
+            <span class="progress-stats" id="progressPercent">0%</span>
+            <button class="btn-cancel-transfer" id="btnCancelTransfer" type="button" title="Cancel Transfer">
+              <span>✕</span> Cancel
+            </button>
+          </div>
         </div>
         <div class="progress-bar-container">
           <div class="progress-bar-fill" id="progressBarFill"></div>
@@ -1429,6 +1459,8 @@
     const progressSpeed = document.getElementById('progressSpeed');
     const progressEta = document.getElementById('progressEta');
     const progressWakeLockHint = document.getElementById('progressWakeLockHint');
+    const btnCancelTransfer = document.getElementById('btnCancelTransfer');
+    let transferCancelled = false;
 
     const fileGrid = document.getElementById('fileGrid');
     const emptyState = document.getElementById('emptyState');
@@ -1564,6 +1596,49 @@
         }
       }
     }, 2000);
+
+    // Cancel active file transfer (both sender and receiver)
+    function cancelCurrentTransfer(initiatedBySelf = true) {
+      transferCancelled = true;
+      isTransferring = false;
+      releaseWakeLock();
+      stopSilentKeepAliveAudio();
+
+      if (incomingTransferId && activeIncomingTransfers[incomingTransferId]) {
+        delete activeIncomingTransfers[incomingTransferId];
+        incomingTransferId = null;
+      }
+
+      if (initiatedBySelf) {
+        Object.values(peerConnections).forEach(p => {
+          if (p.conn && p.conn.open) {
+            try {
+              p.conn.send(JSON.stringify({
+                type: 'file-cancel'
+              }));
+            } catch (e) {}
+          }
+        });
+        showToast('Transfer cancelled.');
+      } else {
+        showToast('Remote device cancelled the transfer.');
+      }
+
+      uploadCard.style.display = 'none';
+      if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+      progressBarFill.style.width = '0%';
+      progressPercent.textContent = '0%';
+      progressSpeed.textContent = '0.0 MB/s';
+      progressEta.textContent = 'Cancelled';
+    }
+
+    if (btnCancelTransfer) {
+      btnCancelTransfer.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelCurrentTransfer(true);
+      });
+    }
 
     function showToast(msg) {
       toast.textContent = msg;
@@ -2062,6 +2137,12 @@
             }
             return;
           }
+
+          // 7. File Cancel packet (received when remote device cancels)
+          if (packet && packet.type === 'file-cancel') {
+            cancelCurrentTransfer(false);
+            return;
+          }
         }
 
         // B. Raw Binary Chunks (ArrayBuffer / TypedArray)
@@ -2255,13 +2336,18 @@
         return;
       }
 
+      transferCancelled = false;
       uploadCard.style.display = 'flex';
 
       for (let i = 0; i < files.length; i++) {
+        if (transferCancelled) break;
         const file = files[i];
         for (const target of targets) {
+          if (transferCancelled) break;
           await sendSingleFileOverP2P(target.conn, file, i + 1, files.length);
         }
+
+        if (transferCancelled) break;
 
         // Also add to sender's own file list with live local thumbnail
         const ext = file.name.split('.').pop().toLowerCase();
@@ -2283,6 +2369,15 @@
           isSent: true
         });
         renderFiles();
+      }
+
+      if (transferCancelled) {
+        uploadCard.style.display = 'none';
+        if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+        isTransferring = false;
+        releaseWakeLock();
+        stopSilentKeepAliveAudio();
+        return;
       }
 
       uploadCard.style.display = 'none';
@@ -2362,6 +2457,8 @@
       }
 
       while (fileOffset < file.size) {
+        if (transferCancelled) break;
+
         // If connection dropped during sending
         if (!conn || !conn.open || (conn.dataChannel && conn.dataChannel.readyState !== 'open')) {
           showToast(`Transfer paused. Reconnect to resume from ${formatBytes(fileOffset)}.`);
@@ -2376,7 +2473,7 @@
 
         let blockOffset = 0;
         while (blockOffset < blockBuffer.byteLength) {
-          if (!conn || !conn.open) break;
+          if (transferCancelled || !conn || !conn.open) break;
 
           // Event-driven backpressure: pause only when DataChannel buffer exceeds 4 MB
           if (conn.dataChannel && conn.dataChannel.bufferedAmount > 4 * 1024 * 1024) {
@@ -2436,9 +2533,18 @@
         }
       }
 
+      if (transferCancelled) {
+        uploadCard.style.display = 'none';
+        if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+        isTransferring = false;
+        releaseWakeLock();
+        stopSilentKeepAliveAudio();
+        return;
+      }
+
       // Step 3: DRAIN THE BUFFER! Wait until bufferedAmount reaches 0 before claiming 100%
       if (fileOffset >= file.size) {
-        while (conn && conn.open && conn.dataChannel && conn.dataChannel.bufferedAmount > 0) {
+        while (!transferCancelled && conn && conn.open && conn.dataChannel && conn.dataChannel.bufferedAmount > 0) {
           const inFlight = conn.dataChannel.bufferedAmount;
           const delivered = Math.max(0, file.size - inFlight);
           const percent = Math.min(99, Math.round((delivered / file.size) * 100));
@@ -2448,6 +2554,8 @@
           progressEta.textContent = 'Flushing network queue to PC...';
           await new Promise(r => setTimeout(r, 60));
         }
+
+        if (transferCancelled) return;
 
         // Step 4: Send file-complete signal
         conn.send(JSON.stringify({
@@ -2765,14 +2873,18 @@
     }
 
     async function uploadFilesLocal(files) {
+      transferCancelled = false;
       uploadCard.style.display = 'flex';
       for (let i = 0; i < files.length; i++) {
+        if (transferCancelled) break;
         await uploadSingleLocalFile(files[i], i + 1, files.length);
       }
       uploadCard.style.display = 'none';
-      playChime();
-      showToast('All files saved to PC!');
-      fetchLocalFiles();
+      if (!transferCancelled) {
+        playChime();
+        showToast('All files saved to PC!');
+        fetchLocalFiles();
+      }
     }
 
     async function uploadSingleLocalFile(file, currentIdx, totalFiles) {
@@ -2788,6 +2900,7 @@
       const startTime = Date.now();
 
       for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+        if (transferCancelled) return;
         const start = chunkIdx * chunkSize;
         const end = Math.min(start + chunkSize, file.size);
         const chunkBlob = file.slice(start, end);
