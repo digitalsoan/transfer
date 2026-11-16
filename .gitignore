@@ -1,0 +1,8 @@
+shared_files/
+.temp/
+*.part
+.notes.txt
+*.zip
+.DS_Store
+Thumbs.db
+node_modules/
