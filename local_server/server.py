@@ -106,6 +106,30 @@ class LocalShareHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "index.html not found")
             return
 
+        # 1b. Static Assets (/assets/css/*, /assets/js/*)
+        if path.startswith('/assets/'):
+            clean_rel = os.path.normpath(path.lstrip('/\\')).replace('\\', '/')
+            asset_file = os.path.join(ROOT_DIR, clean_rel)
+            assets_dir = os.path.join(ROOT_DIR, 'assets')
+            if os.path.commonpath([asset_file, assets_dir]) == assets_dir and os.path.isfile(asset_file):
+                mime, _ = mimetypes.guess_type(asset_file)
+                if not mime:
+                    if asset_file.endswith('.css'):
+                        mime = 'text/css'
+                    elif asset_file.endswith('.js'):
+                        mime = 'application/javascript'
+                    else:
+                        mime = 'application/octet-stream'
+                self.send_response(200)
+                self.send_header('Content-Type', f'{mime}; charset=utf-8' if 'text' in mime or 'javascript' in mime else mime)
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers_cors()
+                with open(asset_file, 'rb') as f:
+                    self.wfile.write(f.read())
+                return
+            self.send_error(404, "Asset not found")
+            return
+
         # 2. Info
         if path == '/api/info':
             ips = get_local_ips()

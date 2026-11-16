@@ -51,6 +51,7 @@ const MIME_TYPES = {
   '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4',
   '.wav': 'audio/wav', '.pdf': 'application/pdf', '.zip': 'application/zip',
   '.txt': 'text/plain; charset=utf-8', '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json'
 };
 
@@ -90,6 +91,22 @@ const server = http.createServer((req, res) => {
     }
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('index.html not found');
+    return;
+  }
+
+  // 1b. Static Assets (/assets/css/*, /assets/js/*)
+  if (pathname.startsWith('/assets/')) {
+    const safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
+    const assetFile = path.join(ROOT_DIR, safePath);
+    const assetsDir = path.join(ROOT_DIR, 'assets');
+    if (assetFile.startsWith(assetsDir) && fs.existsSync(assetFile) && fs.statSync(assetFile).isFile()) {
+      const mime = getMime(assetFile);
+      res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
+      fs.createReadStream(assetFile).pipe(res);
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Asset not found');
     return;
   }
 

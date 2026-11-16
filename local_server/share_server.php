@@ -50,6 +50,7 @@ function getFileMime($path) {
         'pdf' => 'application/pdf', 'zip' => 'application/zip', 'rar' => 'application/x-rar-compressed',
         '7z' => 'application/x-7z-compressed', 'tar' => 'application/x-tar', 'gz' => 'application/gzip',
         'txt' => 'text/plain; charset=utf-8', 'md' => 'text/markdown; charset=utf-8',
+        'css' => 'text/css; charset=utf-8', 'js' => 'application/javascript; charset=utf-8',
         'json' => 'application/json', 'html' => 'text/html; charset=utf-8',
         'csv' => 'text/csv; charset=utf-8', 'doc' => 'application/msword',
         'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -206,6 +207,25 @@ if ($path === '/' || $path === '/index.html' || $path === '/local_share.html') {
     }
     header('Content-Type: text/plain');
     echo "index.html not found";
+    exit;
+}
+
+// 1b. Static Assets (/assets/css/*, /assets/js/*)
+if (strpos($path, '/assets/') === 0) {
+    $cleanRel = str_replace(['..', '\\'], ['', '/'], ltrim($path, '/'));
+    $assetFile = $rootDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $cleanRel);
+    $assetsDir = $rootDir . DIRECTORY_SEPARATOR . 'assets';
+    $realAsset = realpath($assetFile);
+    $realAssetsDir = realpath($assetsDir);
+    if ($realAsset && $realAssetsDir && strpos($realAsset, $realAssetsDir) === 0 && is_file($realAsset)) {
+        header('Content-Type: ' . getFileMime($realAsset));
+        header('Cache-Control: no-cache');
+        readfile($realAsset);
+        exit;
+    }
+    http_response_code(404);
+    header('Content-Type: text/plain');
+    echo "Asset not found";
     exit;
 }
 
