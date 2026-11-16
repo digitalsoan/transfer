@@ -7,7 +7,7 @@ Local high-speed file transfer web app to send and receive photos, 4K videos, do
 ## 🚀 Quick Start (In 5 Seconds)
 
 1. **Connect both devices to the same Wi-Fi**:
-   - Make sure your PC and iPhone are connected to the same Wi-Fi router (e.g., **`mywifi`**).
+   - Make sure your PC and iPhone/Android Device are connected to the same Wi-Fi router (e.g., **`mywifi`**).
 2. **Start the Server on PC**:
    - Double-click **`start_share.bat`** in `D:\` (or run `php -S 0.0.0.0:8080 share_server.php`).
    - Your PC browser will automatically open `http://localhost:8080`.
