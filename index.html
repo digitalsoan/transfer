@@ -1864,13 +1864,19 @@
           incomingChunks.push(data);
           const chunkSize = data.byteLength || data.size || (data.buffer ? data.buffer.byteLength : 0);
           receivedBytes += chunkSize;
-          const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
-          progressBarFill.style.width = percent + '%';
-          progressPercent.textContent = percent + '%';
-          const elapsedSec = (Date.now() - startTime) / 1000;
-          const speedBps = elapsedSec > 0 ? receivedBytes / elapsedSec : 0;
-          progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
-          progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+
+          // Throttled UI update (120ms) for high-speed throughput (up to 30-60 MB/s)
+          const now = Date.now();
+          if (now - startTime > 0 && (now - (conn._lastUiTime || 0) > 120 || receivedBytes >= incomingFileMeta.size)) {
+            conn._lastUiTime = now;
+            const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
+            progressBarFill.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+            const elapsedSec = (now - startTime) / 1000;
+            const speedBps = elapsedSec > 0 ? receivedBytes / elapsedSec : 0;
+            progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
+            progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+          }
         }
       });
 
@@ -2063,8 +2069,8 @@
     }
 
     async function sendSingleFileOverP2P(conn, file, currentIdx, totalFiles) {
-      // Safe 16 KB chunks for 100% WebKit / iOS Safari compatibility
-      const chunkSize = 16 * 1024;
+      // 64 KB WebRTC chunks for high-speed local transfer (30-60 MB/s)
+      const chunkSize = 64 * 1024;
       progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
       progressBarFill.style.width = '0%';
       progressPercent.textContent = '0%';
@@ -2079,38 +2085,62 @@
         mime: mimeType
       }));
 
-      // 40ms pause to ensure receiver prepares buffer
-      await new Promise(r => setTimeout(r, 40));
+      // Small 30ms pause to ensure receiver prepares buffer
+      await new Promise(r => setTimeout(r, 30));
 
       let offset = 0;
       const startTime = Date.now();
+      let lastSenderUiUpdate = 0;
+
+      // Configure high-performance DataChannel threshold
+      if (conn.dataChannel) {
+        try {
+          conn.dataChannel.bufferedAmountLowThreshold = 512 * 1024; // 512 KB
+        } catch (e) {}
+      }
 
       while (offset < file.size) {
-        // Backpressure check
-        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 256 * 1024) {
-          await new Promise(r => setTimeout(r, 20));
+        // High-speed event-driven backpressure:
+        // Only pause when buffer exceeds 1.5 MB, and resume immediately as soon as it drops!
+        if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1.5 * 1024 * 1024) {
+          await new Promise(resolve => {
+            const onLow = () => {
+              conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+              resolve();
+            };
+            conn.dataChannel.addEventListener('bufferedamountlow', onLow);
+            setTimeout(() => {
+              conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+              resolve();
+            }, 6);
+          });
         }
 
         const slice = file.slice(offset, offset + chunkSize);
         const buffer = await slice.arrayBuffer();
 
-        // Send raw ArrayBuffer directly over DataChannel!
+        // Send raw ArrayBuffer directly over SCTP DataChannel
         conn.send(buffer);
 
         offset += buffer.byteLength;
 
-        const percent = Math.min(100, Math.round((offset / file.size) * 100));
-        progressBarFill.style.width = percent + '%';
-        progressPercent.textContent = percent + '%';
+        // Throttled UI update (120ms) to eliminate browser DOM reflow bottleneck
+        const now = Date.now();
+        if (now - lastSenderUiUpdate > 120 || offset >= file.size) {
+          lastSenderUiUpdate = now;
+          const percent = Math.min(100, Math.round((offset / file.size) * 100));
+          progressBarFill.style.width = percent + '%';
+          progressPercent.textContent = percent + '%';
 
-        const elapsedSec = (Date.now() - startTime) / 1000;
-        const speedBps = elapsedSec > 0 ? offset / elapsedSec : 0;
-        progressTransferInfo.textContent = `${formatBytes(offset)} / ${formatBytes(file.size)}`;
-        progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+          const elapsedSec = (now - startTime) / 1000;
+          const speedBps = elapsedSec > 0 ? offset / elapsedSec : 0;
+          progressTransferInfo.textContent = `${formatBytes(offset)} / ${formatBytes(file.size)}`;
+          progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+        }
       }
 
-      // 60ms pause before completion packet
-      await new Promise(r => setTimeout(r, 60));
+      // Small pause before completion packet
+      await new Promise(r => setTimeout(r, 40));
 
       // 2. Send complete JSON string
       conn.send(JSON.stringify({
