@@ -1737,6 +1737,8 @@
 
       if (isManual) showToast("Connecting to friend device...");
       const conn = peer.connect(targetPeerId, {
+        serialization: 'raw',
+        reliable: true,
         metadata: {
           name: myDeviceName,
           os: myDeviceOs,
@@ -1805,40 +1807,60 @@
       conn.on('data', async (data) => {
         if (!data) return;
 
-        // 1. Metadata packet
-        if (data.type === 'file-meta') {
-          incomingFileMeta = data;
-          incomingChunks = [];
-          receivedBytes = 0;
-          startTime = Date.now();
-          uploadCard.style.display = 'flex';
-          progressFileName.textContent = `Receiving: ${data.name}`;
-          progressBarFill.style.width = '0%';
-          progressPercent.textContent = '0%';
-          return;
-        }
-
-        // 2. Structured Chunk packet (type: 'file-chunk')
-        if (data.type === 'file-chunk' && incomingFileMeta) {
-          const chunk = data.chunk;
-          if (chunk) {
-            incomingChunks.push(chunk);
-            const chunkSize = chunk.byteLength || chunk.size || (chunk.buffer ? chunk.buffer.byteLength : 0);
-            receivedBytes += chunkSize;
-            const percent = Math.min(100, Math.round((receivedBytes / incomingFileMeta.size) * 100));
-            progressBarFill.style.width = percent + '%';
-            progressPercent.textContent = percent + '%';
-            const elapsedSec = (Date.now() - startTime) / 1000;
-            const speedBps = elapsedSec > 0 ? receivedBytes / elapsedSec : 0;
-            progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
-            progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
+        // A. JSON Control Messages (file-meta / file-complete)
+        if (typeof data === 'string') {
+          let packet = null;
+          try {
+            packet = JSON.parse(data);
+          } catch (e) {
+            return;
           }
-          return;
+
+          if (packet && packet.type === 'file-meta') {
+            incomingFileMeta = packet;
+            incomingChunks = [];
+            receivedBytes = 0;
+            startTime = Date.now();
+            uploadCard.style.display = 'flex';
+            progressFileName.textContent = `Receiving: ${packet.name}`;
+            progressBarFill.style.width = '0%';
+            progressPercent.textContent = '0%';
+            return;
+          }
+
+          if (packet && packet.type === 'file-complete' && incomingFileMeta) {
+            uploadCard.style.display = 'none';
+
+            const mimeType = getMimeType(incomingFileMeta.name, incomingFileMeta.mime);
+            const blob = new Blob(incomingChunks, { type: mimeType });
+            const objectUrl = URL.createObjectURL(blob);
+            const ext = incomingFileMeta.name.split('.').pop().toLowerCase();
+
+            p2pReceivedFiles.unshift({
+              name: incomingFileMeta.name,
+              size: blob.size > 0 ? blob.size : incomingFileMeta.size,
+              mtime: Math.floor(Date.now() / 1000),
+              ext,
+              mime: mimeType,
+              isImage: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext),
+              isVideo: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext),
+              isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
+              isDoc: true,
+              blobUrl: objectUrl,
+              blobObj: blob
+            });
+
+            playChime();
+            showToast(`Received ${incomingFileMeta.name}!`);
+            renderFiles();
+            incomingFileMeta = null;
+            incomingChunks = [];
+            return;
+          }
         }
 
-        // 2b. Raw Binary chunk fallback (ArrayBuffer, Uint8Array, Blob)
-        const isRawBinary = data instanceof ArrayBuffer || ArrayBuffer.isView(data) || (typeof Blob !== 'undefined' && data instanceof Blob);
-        if (isRawBinary && incomingFileMeta) {
+        // B. Raw Binary Chunks (ArrayBuffer / TypedArray)
+        if (incomingFileMeta) {
           incomingChunks.push(data);
           const chunkSize = data.byteLength || data.size || (data.buffer ? data.buffer.byteLength : 0);
           receivedBytes += chunkSize;
@@ -1849,37 +1871,6 @@
           const speedBps = elapsedSec > 0 ? receivedBytes / elapsedSec : 0;
           progressTransferInfo.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(incomingFileMeta.size)}`;
           progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
-          return;
-        }
-
-        // 3. File complete packet
-        if (data.type === 'file-complete' && incomingFileMeta) {
-          uploadCard.style.display = 'none';
-
-          const mimeType = getMimeType(incomingFileMeta.name, incomingFileMeta.mime);
-          const blob = new Blob(incomingChunks, { type: mimeType });
-          const objectUrl = URL.createObjectURL(blob);
-          const ext = incomingFileMeta.name.split('.').pop().toLowerCase();
-
-          p2pReceivedFiles.unshift({
-            name: incomingFileMeta.name,
-            size: blob.size > 0 ? blob.size : incomingFileMeta.size,
-            mtime: Math.floor(Date.now() / 1000),
-            ext,
-            mime: mimeType,
-            isImage: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext),
-            isVideo: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext),
-            isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
-            isDoc: true,
-            blobUrl: objectUrl,
-            blobObj: blob
-          });
-
-          playChime();
-          showToast(`Received ${incomingFileMeta.name}!`);
-          renderFiles();
-          incomingFileMeta = null;
-          incomingChunks = [];
         }
       });
 
@@ -2072,7 +2063,7 @@
     }
 
     async function sendSingleFileOverP2P(conn, file, currentIdx, totalFiles) {
-      // 16 KB chunks for rock-solid iOS Safari / WebKit WebRTC compatibility
+      // Safe 16 KB chunks for 100% WebKit / iOS Safari compatibility
       const chunkSize = 16 * 1024;
       progressFileName.textContent = `(${currentIdx}/${totalFiles}) ${file.name}`;
       progressBarFill.style.width = '0%';
@@ -2080,36 +2071,31 @@
 
       const mimeType = getMimeType(file.name, file.type);
 
-      // 1. Send metadata packet
-      conn.send({
+      // 1. Send metadata JSON string
+      conn.send(JSON.stringify({
         type: 'file-meta',
         name: file.name,
         size: file.size,
         mime: mimeType
-      });
+      }));
 
       // 40ms pause to ensure receiver prepares buffer
       await new Promise(r => setTimeout(r, 40));
 
       let offset = 0;
-      let chunkIdx = 0;
       const startTime = Date.now();
 
       while (offset < file.size) {
-        // Backpressure check: wait if buffer gets loaded
+        // Backpressure check
         if (conn.dataChannel && conn.dataChannel.bufferedAmount > 256 * 1024) {
-          await new Promise(r => setTimeout(r, 25));
+          await new Promise(r => setTimeout(r, 20));
         }
 
         const slice = file.slice(offset, offset + chunkSize);
         const buffer = await slice.arrayBuffer();
 
-        // Send structured chunk packet
-        conn.send({
-          type: 'file-chunk',
-          index: chunkIdx++,
-          chunk: buffer
-        });
+        // Send raw ArrayBuffer directly over DataChannel!
+        conn.send(buffer);
 
         offset += buffer.byteLength;
 
@@ -2123,14 +2109,14 @@
         progressSpeed.textContent = `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`;
       }
 
-      // Small pause before completion packet
+      // 60ms pause before completion packet
       await new Promise(r => setTimeout(r, 60));
 
-      // 2. Send complete packet
-      conn.send({
+      // 2. Send complete JSON string
+      conn.send(JSON.stringify({
         type: 'file-complete',
         name: file.name
-      });
+      }));
     }
 
     // ==========================================================
@@ -2248,7 +2234,7 @@
         }
 
         let mediaActionHtml = '';
-        if (isMedia) {
+        if (isMedia && (isIOS || isAndroid)) {
           mediaActionHtml = `
             <button class="btn-file-action btn-gallery" style="width:100%;" onclick="saveToGallery('${safeName}')">
               <span>📲</span> Save to Gallery
@@ -2301,7 +2287,7 @@
       btnModalDownload.href = downloadUrl;
       btnModalDownload.setAttribute('download', fileName);
 
-      if (file.isImage || file.isVideo) {
+      if ((file.isImage || file.isVideo) && (isIOS || isAndroid)) {
         btnModalGallery.style.display = 'flex';
       } else {
         btnModalGallery.style.display = 'none';
@@ -2642,6 +2628,12 @@
     // ==========================================================
     // 10. BOOTSTRAP INITIALIZATION
     // ==========================================================
+    // Hide iOS Gallery tip on desktop PC
+    if (!isIOS && !isAndroid) {
+      const tipBanner = document.querySelector('.ios-tip-banner');
+      if (tipBanner) tipBanner.style.display = 'none';
+    }
+
     renderDevicesList();
     initInternetPeer();
 
