@@ -657,6 +657,31 @@
       transform: scale(var(--active-scale));
     }
 
+    .btn-resume-transfer {
+      background: rgba(52, 199, 89, 0.18);
+      border: 1px solid rgba(52, 199, 89, 0.45);
+      color: var(--accent);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.725rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      gap: 0.25rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .btn-resume-transfer:hover {
+      background: rgba(52, 199, 89, 0.32);
+      border-color: var(--accent);
+    }
+
+    .btn-resume-transfer:active {
+      transform: scale(var(--active-scale));
+    }
+
     .progress-bar-container {
       width: 100%;
       height: 8px;
@@ -1110,7 +1135,7 @@
         <div class="brand-icon">⚡</div>
         <div class="brand-text">
           <h1>LocalShare</h1>
-          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.5</span></p>
+          <p>Direct File Transfer • Same Wi-Fi Auto-Discovery <span style="opacity:0.6; font-size:0.7rem; margin-left:6px; background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px;">v1.6 Auto-Resume</span></p>
         </div>
       </div>
       <div class="header-actions">
@@ -1227,6 +1252,9 @@
           <span class="progress-filename" id="progressFileName">Sending file...</span>
           <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
             <span class="progress-stats" id="progressPercent">0%</span>
+            <button class="btn-resume-transfer" id="btnResumeTransfer" type="button" title="Resume Transfer">
+              <span>▶</span> Resume
+            </button>
             <button class="btn-cancel-transfer" id="btnCancelTransfer" type="button" title="Cancel Transfer">
               <span>✕</span> Cancel
             </button>
@@ -1427,6 +1455,8 @@
     let activeIncomingTransfers = {}; // transferId -> { meta, chunks, receivedBytes, startTime, lastSampleTime, lastSampleBytes, currentSpeedMBps, lastUiTime, lastChunkTime }
     let incomingTransferId = null;
     let isTransferring = false;
+    let currentTransferSession = null;
+    let isAutoResuming = false;
     let wakeLock = null;
     let keepAliveAudioCtx = null;
     let keepAliveOsc = null;
@@ -1459,6 +1489,7 @@
     const progressSpeed = document.getElementById('progressSpeed');
     const progressEta = document.getElementById('progressEta');
     const progressWakeLockHint = document.getElementById('progressWakeLockHint');
+    const btnResumeTransfer = document.getElementById('btnResumeTransfer');
     const btnCancelTransfer = document.getElementById('btnCancelTransfer');
     let transferCancelled = false;
 
@@ -1575,16 +1606,127 @@
       } catch (e) {}
     }
 
-    // Auto-reacquire wake lock and reconnect if user wakes the phone
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible') {
-        if (isTransferring) {
-          await acquireWakeLock();
-          startSilentKeepAliveAudio();
+    // Auto-reconnect engine to recover connection after phone screen sleep/lock
+    async function waitForAutoReconnect(targetPeerId, maxWaitSec = 30) {
+      console.log('waitForAutoReconnect starting for peer:', targetPeerId);
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < maxWaitSec * 1000) {
+        if (transferCancelled) return null;
+
+        // Check if PeerJS itself is alive
+        if (!peer || peer.destroyed) {
+          initInternetPeer();
+        } else if (peer.disconnected) {
+          try { peer.reconnect(); } catch (e) {}
         }
-        broadcastPresence('ping');
+
+        // Check if active open connection to targetPeerId exists
+        const existing = peerConnections[targetPeerId];
+        if (existing && existing.conn && existing.conn.open && existing.conn.dataChannel && existing.conn.dataChannel.readyState === 'open') {
+          return existing.conn;
+        }
+
+        // Attempt fresh connect if peer ID is available
+        if (peer && peer.open && (!existing || !existing.conn || !existing.conn.open)) {
+          try {
+            const newConn = peer.connect(targetPeerId, {
+              serialization: 'raw',
+              reliable: true,
+              metadata: {
+                name: myDeviceName,
+                os: myDeviceOs,
+                type: myDeviceType,
+                icon: myDeviceIcon,
+                pin: myShortPin
+              }
+            });
+            setupConnectionEvents(newConn);
+
+            const opened = await new Promise(resolve => {
+              const to = setTimeout(() => resolve(false), 3500);
+              newConn.on('open', () => {
+                clearTimeout(to);
+                resolve(true);
+              });
+              newConn.on('error', () => {
+                clearTimeout(to);
+                resolve(false);
+              });
+            });
+
+            if (opened && newConn.open && newConn.dataChannel && newConn.dataChannel.readyState === 'open') {
+              return newConn;
+            }
+          } catch (e) {
+            console.warn('Auto-reconnect error:', e);
+          }
+        }
+
+        await new Promise(r => setTimeout(r, 1200));
       }
-    });
+      return null;
+    }
+
+    async function attemptAutoResume() {
+      if (!currentTransferSession || currentTransferSession.state === 'cancelled') return;
+      if (isAutoResuming) return;
+      isAutoResuming = true;
+
+      showToast('Phone unlocked! Resuming transfer to PC...');
+      progressEta.textContent = 'Phone unlocked! Reconnecting to PC...';
+      if (btnResumeTransfer) btnResumeTransfer.style.display = 'none';
+
+      const targetPeerId = currentTransferSession.targetPeerId;
+      const reconnectedConn = await waitForAutoReconnect(targetPeerId, 20);
+
+      if (reconnectedConn) {
+        currentTransferSession.state = 'active';
+        isAutoResuming = false;
+        showToast('Connected! Resuming file transfer...');
+        await sendSingleFileOverP2P(
+          reconnectedConn,
+          currentTransferSession.file,
+          currentTransferSession.currentIdx,
+          currentTransferSession.totalFiles
+        );
+      } else {
+        isAutoResuming = false;
+        progressEta.textContent = '⚠️ Reconnect failed. Tap "Resume" to retry.';
+        if (btnResumeTransfer) btnResumeTransfer.style.display = 'inline-flex';
+      }
+    }
+
+    async function handleDeviceWake() {
+      if (document.visibilityState !== 'visible') return;
+      console.log('Device woke up, visibility visible');
+      acquireWakeLock();
+      startSilentKeepAliveAudio();
+
+      if (!peer || peer.destroyed) {
+        initInternetPeer();
+      } else if (peer.disconnected) {
+        try { peer.reconnect(); } catch (e) {}
+      }
+
+      broadcastPresence('ping');
+
+      if (currentTransferSession && currentTransferSession.state === 'paused') {
+        attemptAutoResume();
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleDeviceWake);
+    window.addEventListener('focus', handleDeviceWake);
+    window.addEventListener('pageshow', handleDeviceWake);
+
+    if (btnResumeTransfer) {
+      btnResumeTransfer.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        attemptAutoResume();
+      });
+    }
 
     // Periodic receiver check for paused / stalled stream (e.g. phone went to sleep)
     setInterval(() => {
@@ -1601,6 +1743,7 @@
     function cancelCurrentTransfer(initiatedBySelf = true) {
       transferCancelled = true;
       isTransferring = false;
+      currentTransferSession = null;
       releaseWakeLock();
       stopSilentKeepAliveAudio();
 
@@ -1626,6 +1769,7 @@
 
       uploadCard.style.display = 'none';
       if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+      if (btnResumeTransfer) btnResumeTransfer.style.display = 'none';
       progressBarFill.style.width = '0%';
       progressPercent.textContent = '0%';
       progressSpeed.textContent = '0.0 MB/s';
@@ -2344,7 +2488,21 @@
         const file = files[i];
         for (const target of targets) {
           if (transferCancelled) break;
+          currentTransferSession = {
+            file,
+            currentIdx: i + 1,
+            totalFiles: files.length,
+            targetPeerId: target.conn.peer,
+            transferId: (file.name + '_' + file.size + '_' + (file.lastModified || 0)).replace(/[^a-zA-Z0-9_]/g, '_'),
+            fileOffset: 0,
+            state: 'active'
+          };
           await sendSingleFileOverP2P(target.conn, file, i + 1, files.length);
+
+          // If the transfer paused (e.g. phone display turned off), wait for auto-resume or cancel!
+          while (!transferCancelled && currentTransferSession && currentTransferSession.state === 'paused') {
+            await new Promise(r => setTimeout(r, 1000));
+          }
         }
 
         if (transferCancelled) break;
@@ -2461,9 +2619,27 @@
 
         // If connection dropped during sending
         if (!conn || !conn.open || (conn.dataChannel && conn.dataChannel.readyState !== 'open')) {
-          showToast(`Transfer paused. Reconnect to resume from ${formatBytes(fileOffset)}.`);
-          progressEta.textContent = 'Transfer paused. Reconnecting...';
-          break;
+          console.warn('WebRTC dropped at offset:', fileOffset);
+          if (currentTransferSession) {
+            currentTransferSession.fileOffset = fileOffset;
+            currentTransferSession.state = 'paused';
+          }
+          progressSpeed.textContent = '0.0 MB/s';
+          progressEta.textContent = '⚠️ Stream paused (Screen locked). Reconnecting to PC...';
+          showToast(`Transfer paused at ${formatBytes(fileOffset)}. Reconnecting...`);
+          if (btnResumeTransfer) btnResumeTransfer.style.display = 'inline-flex';
+
+          const targetPeerId = (currentTransferSession && currentTransferSession.targetPeerId) || conn.peer;
+          const reconnectedConn = await waitForAutoReconnect(targetPeerId, 25);
+          if (reconnectedConn && !transferCancelled) {
+            conn = reconnectedConn;
+            showToast('Reconnected! Continuing transfer...');
+            progressEta.textContent = 'Reconnected! Continuing...';
+            if (btnResumeTransfer) btnResumeTransfer.style.display = 'none';
+            continue;
+          } else {
+            break;
+          }
         }
 
         // Read 1 MB block from disk once (reduces mobile flash I/O by 16x)
@@ -2581,6 +2757,10 @@
         progressPercent.textContent = '100%';
         progressTransferInfo.textContent = `${formatBytes(file.size)} / ${formatBytes(file.size)}`;
         progressEta.textContent = 'Completed!';
+        if (currentTransferSession) {
+          currentTransferSession.state = 'completed';
+        }
+        if (btnResumeTransfer) btnResumeTransfer.style.display = 'none';
         await new Promise(r => setTimeout(r, 300));
       }
 
