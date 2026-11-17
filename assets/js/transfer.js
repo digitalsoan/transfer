@@ -246,7 +246,7 @@
       }));
 
       await new Promise(resolve => {
-        const t = setTimeout(() => resolve(), 600);
+        const t = setTimeout(() => resolve(), 800);
         conn._resumeResolver = (offset) => {
           clearTimeout(t);
           resumeOffset = offset || 0;
@@ -282,7 +282,7 @@
 
     if (conn.dataChannel) {
       try {
-        conn.dataChannel.bufferedAmountLowThreshold = cfg.BACKPRESSURE_LOW || (512 * 1024); // 512 KB
+        conn.dataChannel.bufferedAmountLowThreshold = cfg.BACKPRESSURE_LOW || (256 * 1024); // 256 KB
         conn.dataChannel.binaryType = 'arraybuffer';
       } catch (e) {}
     }
@@ -374,12 +374,12 @@
               resolve();
             };
 
-            if (!conn.dataChannel || conn.dataChannel.bufferedAmount <= (cfg.BACKPRESSURE_LOW || 512 * 1024)) {
+            if (!conn.dataChannel || conn.dataChannel.bufferedAmount <= (cfg.BACKPRESSURE_LOW || 256 * 1024)) {
               return resolve();
             }
 
             conn.dataChannel.addEventListener('bufferedamountlow', resume, { once: true });
-            setTimeout(resume, 120);
+            setTimeout(resume, 80);
           });
         }
 
@@ -447,7 +447,7 @@
         if (progressBarFill) progressBarFill.style.width = percent + '%';
         if (progressPercent) progressPercent.textContent = percent + '%';
         if (progressTransferInfo) progressTransferInfo.textContent = `${window.LS.ui.formatBytes(delivered)} / ${window.LS.ui.formatBytes(file.size)}`;
-        if (progressEta) progressEta.textContent = 'Flushing network queue to PC...';
+        if (progressEta) progressEta.textContent = 'Flushing network queue...';
         await new Promise(r => setTimeout(r, 60));
       }
 
@@ -467,9 +467,9 @@
       }
 
       // Step 5: Wait for receiver confirmation ACK
-      if (progressEta) progressEta.textContent = 'Verifying on PC...';
+      if (progressEta) progressEta.textContent = 'Verifying transfer...';
       await new Promise(resolve => {
-        const t = setTimeout(() => resolve(), 3000);
+        const t = setTimeout(() => resolve(), 4000);
         conn._ackResolver = (ackId) => {
           if (ackId === transferId) {
             clearTimeout(t);

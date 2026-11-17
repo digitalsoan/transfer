@@ -39,6 +39,7 @@
 
     try {
       const iceServers = [
+        // Primary Global STUN servers (Fastest Anycast, lowest latency worldwide)
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
@@ -47,7 +48,19 @@
         { urls: 'stun:stun.cloudflare.com:3478' },
         { urls: 'stun:global.stun.twilio.com:3478' },
         { urls: 'stun:stun.services.mozilla.com:3478' },
-        { urls: 'stun:stun.nextcloud.com:443' }
+        { urls: 'stun:stun.nextcloud.com:443' },
+        { urls: 'stun:openrelay.metered.ca:80' },
+        // Worldwide Fallback TURN Relays (Guarantees connection across Symmetric NAT, cellular hotspots & corporate firewalls)
+        {
+          urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+            'turns:openrelay.metered.ca:443?transport=tcp'
+          ],
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
       ];
 
       peer = new Peer(cfg.myPeerId, {
@@ -154,10 +167,11 @@
     setupConnectionEvents(conn);
 
     activeConnectPromises[targetPeerId] = new Promise(resolve => {
+      const timeoutMs = isManual ? 14000 : 9000;
       const timeout = setTimeout(() => {
         delete activeConnectPromises[targetPeerId];
         resolve(null);
-      }, 8000);
+      }, timeoutMs);
 
       conn.on('open', () => {
         clearTimeout(timeout);
