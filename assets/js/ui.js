@@ -79,11 +79,19 @@
   }
 
   // Theme Management
+  function updateThemeFavicon(theme) {
+    const favicon = document.getElementById('siteFavicon');
+    if (favicon) {
+      favicon.href = theme === 'light' ? 'assets/images/dgson-logo-light.png' : 'assets/images/dgson-logo.png';
+    }
+  }
+
   function initTheme() {
     const savedTheme = localStorage.getItem('localshare_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
     const themeIcon = document.getElementById('themeIcon');
     if (themeIcon) themeIcon.textContent = savedTheme === 'light' ? '☀️' : '🌓';
+    updateThemeFavicon(savedTheme);
   }
 
   function toggleTheme() {
@@ -93,6 +101,7 @@
     localStorage.setItem('localshare_theme', next);
     const themeIcon = document.getElementById('themeIcon');
     if (themeIcon) themeIcon.textContent = next === 'light' ? '☀️' : '🌓';
+    updateThemeFavicon(next);
   }
 
   // Device Cards Renderer
