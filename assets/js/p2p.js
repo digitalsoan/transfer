@@ -46,7 +46,9 @@
         { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
         { urls: 'stun:global.stun.twilio.com:3478' },
-        // OpenRelay Public TURN servers for symmetric NAT, mobile networks & cross-ISP bypass
+        { urls: 'stun:stun.services.mozilla.com:3478' },
+        { urls: 'stun:stun.nextcloud.com:443' },
+        // High-speed UDP TURN fallback servers (without throttled TCP relay)
         {
           urls: 'turn:openrelay.metered.ca:80',
           username: 'openrelayproject',
@@ -58,7 +60,7 @@
           credential: 'openrelayproject'
         },
         {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          urls: 'turns:openrelay.metered.ca:443',
           username: 'openrelayproject',
           credential: 'openrelayproject'
         }
@@ -226,6 +228,13 @@
 
     conn.on('open', () => {
       console.log('[LS:P2P] WebRTC DataChannel open with peer:', conn.peer);
+
+      if (conn.dataChannel) {
+        try {
+          conn.dataChannel.binaryType = 'arraybuffer';
+          conn.dataChannel.bufferedAmountLowThreshold = 256 * 1024;
+        } catch (e) {}
+      }
 
       // Send identity packet to remote peer
       conn.send(JSON.stringify({

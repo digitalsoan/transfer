@@ -30,6 +30,7 @@
   const btnResumeTransfer = document.getElementById('btnResumeTransfer');
   const transferCompleteActions = document.getElementById('transferCompleteActions');
   const btnQuickSaveGallery = document.getElementById('btnQuickSaveGallery');
+  const btnQuickSaveDownloads = document.getElementById('btnQuickSaveDownloads');
   const btnQuickSavePC = document.getElementById('btnQuickSavePC');
   const btnQuickDownloadZip = document.getElementById('btnQuickDownloadZip');
 
@@ -49,10 +50,16 @@
         btnQuickSaveGallery.innerHTML = `<span>📱</span> Save Received to Gallery (${mediaFiles.length})`;
       }
     }
+    if (btnQuickSaveDownloads) {
+      btnQuickSaveDownloads.style.display = (!isMobile && count > 0) ? 'inline-flex' : 'none';
+      if (count > 0) {
+        btnQuickSaveDownloads.innerHTML = `<span>📥</span> Save to Downloads (${count})`;
+      }
+    }
     if (btnQuickSavePC) {
       btnQuickSavePC.style.display = (!isMobile && count > 0) ? 'inline-flex' : 'none';
       if (count > 0) {
-        btnQuickSavePC.innerHTML = `<span>📂</span> Save Received to PC Folder (${count})`;
+        btnQuickSavePC.innerHTML = `<span>📂</span> Pick Custom Folder (${count})`;
       }
     }
     if (btnQuickDownloadZip) {
@@ -275,7 +282,8 @@
 
     if (conn.dataChannel) {
       try {
-        conn.dataChannel.bufferedAmountLowThreshold = 1024 * 1024; // 1 MB
+        conn.dataChannel.bufferedAmountLowThreshold = 256 * 1024; // 256 KB
+        conn.dataChannel.binaryType = 'arraybuffer';
       } catch (e) {}
     }
 
@@ -353,23 +361,33 @@
       while (blockOffset < blockBuffer.byteLength) {
         if (transferCancelled || !conn || !conn.open) break;
 
-        // Backpressure event-driven throttle
+        // Optimal SCTP backpressure control (prevents buffer bloat & CWND collapse)
         if (conn.dataChannel && conn.dataChannel.bufferedAmount > cfg.BACKPRESSURE_LIMIT) {
           await new Promise(resolve => {
-            const onLow = () => {
-              conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
-              resolve();
+            const checkAndResolve = () => {
+              if (!conn.dataChannel || conn.dataChannel.bufferedAmount <= (cfg.BACKPRESSURE_LOW || 256 * 1024)) {
+                cleanup();
+                resolve();
+              }
             };
-            conn.dataChannel.addEventListener('bufferedamountlow', onLow);
-            setTimeout(() => {
-              conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
-              resolve();
-            }, 10);
+            const onLow = () => checkAndResolve();
+            const interval = setInterval(checkAndResolve, 10);
+            const cleanup = () => {
+              clearInterval(interval);
+              if (conn.dataChannel) {
+                conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+              }
+            };
+            if (conn.dataChannel) {
+              conn.dataChannel.addEventListener('bufferedamountlow', onLow);
+            }
+            checkAndResolve();
           });
         }
 
         const sendLen = Math.min(CHUNK_SIZE, blockBuffer.byteLength - blockOffset);
-        const chunkBuf = blockBuffer.slice(blockOffset, blockOffset + sendLen);
+        // Zero-copy chunk view directly into existing blockBuffer (no garbage collection freezes)
+        const chunkBuf = new Uint8Array(blockBuffer, blockOffset, sendLen);
 
         conn.send(chunkBuf);
 
@@ -1011,7 +1029,43 @@
     await downloadAllAsZip(mediaFiles);
   }
 
-  // 7. 1-Click Save Received Files to PC Folder (File System Access API with ZIP fallback)
+  // 7. Direct save to user's default Downloads folder without File System Access API restrictions
+  async function saveAllDirectlyToDownloads(targetFiles) {
+    const files = getReceivedFilesList(targetFiles);
+    if (!files || files.length === 0) {
+      window.LS.ui.showToast('No received files to save.');
+      return;
+    }
+
+    window.LS.ui.showToast(`Saving ${files.length} file${files.length === 1 ? '' : 's'} directly to Downloads...`);
+
+    let saved = 0;
+    for (let i = 0; i < files.length; i++) {
+      const item = files[i];
+      try {
+        const blob = await resolveFileBlob(item);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        saved++;
+        if (i < files.length - 1) {
+          await new Promise(r => setTimeout(r, 180));
+        }
+      } catch (err) {
+        console.warn('[LS:Transfer] Failed to download file:', item.name, err);
+      }
+    }
+
+    window.LS.ui.playChime();
+    window.LS.ui.showToast(`Saved ${saved} file${saved === 1 ? '' : 's'} directly to Downloads!`);
+  }
+
+  // 8. Save to Custom PC Folder (File System Access API with automatic Downloads fallback)
   async function saveAllToFolder(targetFiles) {
     const files = getReceivedFilesList(targetFiles);
     if (!files || files.length === 0) {
@@ -1022,7 +1076,7 @@
     // Check if File System Access API is supported (Desktop Chrome, Edge, Brave, Opera)
     if ('showDirectoryPicker' in window) {
       try {
-        window.LS.ui.showToast('Select destination folder on your PC...');
+        window.LS.ui.showToast('Select destination folder (Tip: Pick any folder, or a subfolder inside Downloads)...');
         const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
         window.LS.ui.showToast(`Saving ${files.length} received file${files.length === 1 ? '' : 's'} to folder...`);
 
@@ -1045,13 +1099,17 @@
         return;
       } catch (err) {
         if (err.name === 'AbortError') return;
-        console.warn('[LS:Transfer] Directory picker error, falling back to ZIP:', err);
+        console.warn('[LS:Transfer] Directory picker blocked, falling back to direct Downloads save:', err);
+        // Automatic graceful fallback when user picks root Downloads or restricted folders:
+        window.LS.ui.showToast('Browser restricted that folder. Saving files directly to Downloads instead...');
+        await saveAllDirectlyToDownloads(files);
+        return;
       }
     }
 
     // Fallback for Safari, Firefox, or Mobile
-    window.LS.ui.showToast('Downloading received files in a single ZIP...');
-    await downloadAllAsZip(files);
+    window.LS.ui.showToast('Saving files directly to Downloads...');
+    await saveAllDirectlyToDownloads(files);
   }
 
   // 8. 1-Click Download Received Files as a single ZIP archive
@@ -1131,6 +1189,7 @@
     attemptAutoResume,
     saveToGallery,
     saveAllToGallery,
+    saveAllDirectlyToDownloads,
     saveAllToFolder,
     downloadAllAsZip,
     isCancelled,

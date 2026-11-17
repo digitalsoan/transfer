@@ -260,6 +260,7 @@
 
     // Update 1-Click Multi-Save Action buttons in files toolbar (targets received files only)
     const btnSaveAllGallery = document.getElementById('btnSaveAllGallery');
+    const btnSaveAllDownloads = document.getElementById('btnSaveAllDownloads');
     const btnSaveAllFolder = document.getElementById('btnSaveAllFolder');
     const btnDownloadZip = document.getElementById('btnDownloadZip');
     const isMobile = cfg.isIOS || cfg.isAndroid || cfg.isMobileDevice;
@@ -273,10 +274,16 @@
         btnSaveAllGallery.innerHTML = `<span>📱</span> Save Received to Gallery (${receivedMediaFiles.length})`;
       }
     }
+    if (btnSaveAllDownloads) {
+      btnSaveAllDownloads.style.display = (!isMobile && hasReceivedFiles) ? 'inline-flex' : 'none';
+      if (hasReceivedFiles) {
+        btnSaveAllDownloads.innerHTML = `<span>📥</span> Save to Downloads (${receivedFiles.length})`;
+      }
+    }
     if (btnSaveAllFolder) {
       btnSaveAllFolder.style.display = (!isMobile && hasReceivedFiles) ? 'inline-flex' : 'none';
       if (hasReceivedFiles) {
-        btnSaveAllFolder.innerHTML = `<span>📂</span> Save Received to Folder (${receivedFiles.length})`;
+        btnSaveAllFolder.innerHTML = `<span>📂</span> Pick Custom Folder (${receivedFiles.length})`;
       }
     }
     if (btnDownloadZip) {

@@ -297,11 +297,18 @@
       btnOpenFolder.addEventListener('click', () => localApi.openFolder());
     }
 
-    // 1-Click Multi-Save Actions (Mobile Gallery & PC Folder)
+    // 1-Click Multi-Save Actions (Mobile Gallery & PC Downloads/Folder)
     const btnSaveAllGallery = document.getElementById('btnSaveAllGallery');
     if (btnSaveAllGallery) {
       btnSaveAllGallery.addEventListener('click', () => {
         if (window.LS.transfer) window.LS.transfer.saveAllToGallery();
+      });
+    }
+
+    const btnSaveAllDownloads = document.getElementById('btnSaveAllDownloads');
+    if (btnSaveAllDownloads) {
+      btnSaveAllDownloads.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.saveAllDirectlyToDownloads();
       });
     }
 
@@ -323,6 +330,13 @@
     if (btnQuickSaveGallery) {
       btnQuickSaveGallery.addEventListener('click', () => {
         if (window.LS.transfer) window.LS.transfer.saveAllToGallery();
+      });
+    }
+
+    const btnQuickSaveDownloads = document.getElementById('btnQuickSaveDownloads');
+    if (btnQuickSaveDownloads) {
+      btnQuickSaveDownloads.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.saveAllDirectlyToDownloads();
       });
     }
 

@@ -146,9 +146,10 @@
     myDeviceIcon,
     myShortPin,
     myPeerId,
-    CHUNK_SIZE: 64 * 1024,          // 64 KB SCTP wire chunk size
-    BLOCK_SIZE: 1024 * 1024,        // 1 MB disk block read buffer
-    BACKPRESSURE_LIMIT: 4 * 1024 * 1024, // 4 MB flow control threshold
+    CHUNK_SIZE: 60 * 1024,                // 60 KB optimized wire chunk (avoids SCTP packet fragmentation)
+    BLOCK_SIZE: 1024 * 1024,              // 1 MB disk block read buffer
+    BACKPRESSURE_LIMIT: 1024 * 1024,      // 1 MB SCTP pipeline depth (prevents buffer bloat & RTT spikes)
+    BACKPRESSURE_LOW: 256 * 1024,         // 256 KB resume threshold for continuous maximum throughput
     getMimeType,
     getFileCategory
   };
