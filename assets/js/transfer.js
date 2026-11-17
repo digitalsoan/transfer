@@ -367,10 +367,17 @@
       return;
     }
 
-    // Step 3: DRAIN BUFFER - wait until bufferedAmount is 0 before claiming 100%
+    // Step 3: DRAIN BUFFER - wait until bufferedAmount is drained or threshold/timeout reached
     if (fileOffset >= file.size) {
-      while (!transferCancelled && conn && conn.open && conn.dataChannel && conn.dataChannel.bufferedAmount > 0) {
-        const inFlight = conn.dataChannel.bufferedAmount;
+      const drainStartTime = Date.now();
+      const MAX_DRAIN_MS = 3500; // max 3.5 seconds drain wait
+      const DRAIN_THRESHOLD = 64 * 1024; // If under 64 KB, it's virtually flushed
+
+      while (!transferCancelled && conn && (conn.open || (conn.dataChannel && conn.dataChannel.readyState === 'open'))) {
+        const inFlight = (conn.dataChannel ? conn.dataChannel.bufferedAmount : 0);
+        if (inFlight <= DRAIN_THRESHOLD || (Date.now() - drainStartTime > MAX_DRAIN_MS)) {
+          break;
+        }
         const delivered = Math.max(0, file.size - inFlight);
         const percent = Math.min(99, Math.round((delivered / file.size) * 100));
         if (progressBarFill) progressBarFill.style.width = percent + '%';
@@ -383,18 +390,22 @@
       if (transferCancelled) return;
 
       // Step 4: Send file-complete packet
-      conn.send(JSON.stringify({
-        type: 'file-complete',
-        transferId: transferId,
-        name: file.name,
-        currentIdx: currentIdx,
-        totalFiles: totalFiles
-      }));
+      try {
+        conn.send(JSON.stringify({
+          type: 'file-complete',
+          transferId: transferId,
+          name: file.name,
+          currentIdx: currentIdx,
+          totalFiles: totalFiles
+        }));
+      } catch (e) {
+        console.warn('[LS:Transfer] Failed to send file-complete:', e);
+      }
 
       // Step 5: Wait for receiver confirmation ACK
       if (progressEta) progressEta.textContent = 'Verifying on PC...';
       await new Promise(resolve => {
-        const t = setTimeout(() => resolve(), 8000);
+        const t = setTimeout(() => resolve(), 3000);
         conn._ackResolver = (ackId) => {
           if (ackId === transferId) {
             clearTimeout(t);
@@ -407,12 +418,12 @@
       if (progressBarFill) progressBarFill.style.width = '100%';
       if (progressPercent) progressPercent.textContent = '100%';
       if (progressTransferInfo) progressTransferInfo.textContent = `${window.LS.ui.formatBytes(file.size)} / ${window.LS.ui.formatBytes(file.size)}`;
-      if (progressEta) progressEta.textContent = (totalFiles > 1 && currentIdx < totalFiles) ? `(${currentIdx}/${totalFiles}) Completed! Next file...` : 'Completed!';
+      if (progressEta) progressEta.textContent = (totalFiles > 1 && currentIdx < totalFiles) ? `(${currentIdx}/${totalFiles}) Done! Sending next file...` : 'Completed!';
       if (currentTransferSession) {
         currentTransferSession.state = 'completed';
       }
       if (btnResumeTransfer) btnResumeTransfer.style.display = 'none';
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 150));
     }
 
     if (!totalFiles || currentIdx >= totalFiles || transferCancelled) {
@@ -420,6 +431,81 @@
       window.LS.power.releaseWakeLock();
       window.LS.power.stopSilentAudio();
       if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+    }
+  }
+
+  // Helper: Finalize a fully received file, build Blob, add to list, send ACK, and advance queue
+  function finalizeReceivedFile(conn, tId, currentIdx, totalFiles) {
+    const active = activeIncomingTransfers[tId];
+    if (!active || active.finalized || !active.chunks || active.chunks.length === 0) return;
+    active.finalized = true;
+
+    if (active._autoFinalizeTimer) {
+      clearTimeout(active._autoFinalizeTimer);
+      active._autoFinalizeTimer = null;
+    }
+
+    const cfg = window.LS.config;
+    const mimeType = cfg.getMimeType(active.meta.name, active.meta.mime);
+    const blob = new Blob(active.chunks, { type: mimeType });
+    const objectUrl = URL.createObjectURL(blob);
+    const ext = active.meta.name.split('.').pop().toLowerCase();
+
+    window.LS.app.addReceivedFile({
+      name: active.meta.name,
+      size: blob.size > 0 ? blob.size : active.meta.size,
+      mtime: Math.floor(Date.now() / 1000),
+      ext,
+      mime: mimeType,
+      isImage: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext),
+      isVideo: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext),
+      isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
+      isDoc: true,
+      blobUrl: objectUrl,
+      blobObj: blob
+    });
+
+    window.LS.ui.playChime();
+    window.LS.ui.showToast(`Received ${active.meta.name}!`);
+
+    // Send confirmation ACK back to sender immediately
+    if (conn && (conn.open || (conn.dataChannel && conn.dataChannel.readyState === 'open'))) {
+      try {
+        conn.send(JSON.stringify({
+          type: 'file-ack',
+          transferId: tId,
+          name: active.meta.name,
+          status: 'ok'
+        }));
+      } catch (e) {
+        console.warn('[LS:Transfer] Failed to send file-ack:', e);
+      }
+    }
+
+    // Free memory immediately
+    active.chunks = [];
+    delete activeIncomingTransfers[tId];
+    if (incomingTransferId === tId) {
+      incomingTransferId = null;
+    }
+
+    const cIdx = currentIdx || active.meta.currentIdx || 1;
+    const tFiles = totalFiles || active.meta.totalFiles || 1;
+    const isLastFile = !tFiles || cIdx >= tFiles;
+
+    if (isLastFile) {
+      if (progressBarFill) progressBarFill.style.width = '100%';
+      if (progressPercent) progressPercent.textContent = '100%';
+      if (progressEta) progressEta.textContent = 'All files received!';
+      setTimeout(() => {
+        if (uploadCard) uploadCard.style.display = 'none';
+        if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+        window.LS.power.releaseWakeLock();
+      }, 1500);
+    } else {
+      if (progressBarFill) progressBarFill.style.width = '100%';
+      if (progressPercent) progressPercent.textContent = '100%';
+      if (progressEta) progressEta.textContent = `(${cIdx}/${tFiles}) Saved! Waiting for next file...`;
     }
   }
 
@@ -499,53 +585,7 @@
       // 4. File Complete Packet
       if (packet && packet.type === 'file-complete') {
         const tId = packet.transferId || incomingTransferId;
-        const active = (tId && activeIncomingTransfers[tId]);
-
-        if (active && active.chunks.length > 0) {
-          const mimeType = cfg.getMimeType(active.meta.name, active.meta.mime);
-          const blob = new Blob(active.chunks, { type: mimeType });
-          const objectUrl = URL.createObjectURL(blob);
-          const ext = active.meta.name.split('.').pop().toLowerCase();
-
-          window.LS.app.addReceivedFile({
-            name: active.meta.name,
-            size: blob.size > 0 ? blob.size : active.meta.size,
-            mtime: Math.floor(Date.now() / 1000),
-            ext,
-            mime: mimeType,
-            isImage: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'bmp', 'svg'].includes(ext),
-            isVideo: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'].includes(ext),
-            isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
-            isDoc: true,
-            blobUrl: objectUrl,
-            blobObj: blob
-          });
-
-          window.LS.ui.playChime();
-          window.LS.ui.showToast(`Received ${active.meta.name}!`);
-
-          // Send confirmation ACK back to sender
-          conn.send(JSON.stringify({
-            type: 'file-ack',
-            transferId: tId,
-            name: active.meta.name,
-            status: 'ok'
-          }));
-
-          delete activeIncomingTransfers[tId];
-          incomingTransferId = null;
-
-          const isLastFile = !packet.totalFiles || packet.currentIdx >= packet.totalFiles;
-          if (isLastFile) {
-            if (uploadCard) uploadCard.style.display = 'none';
-            if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
-            window.LS.power.releaseWakeLock();
-          } else {
-            if (progressBarFill) progressBarFill.style.width = '100%';
-            if (progressPercent) progressPercent.textContent = '100%';
-            if (progressEta) progressEta.textContent = `(${packet.currentIdx}/${packet.totalFiles}) Saved! Waiting for next file...`;
-          }
-        }
+        finalizeReceivedFile(conn, tId, packet.currentIdx, packet.totalFiles);
         return;
       }
 
@@ -566,11 +606,22 @@
 
     // B. Raw Binary Chunks (ArrayBuffer)
     if (incomingTransferId && activeIncomingTransfers[incomingTransferId]) {
-      const active = activeIncomingTransfers[incomingTransferId];
+      const tId = incomingTransferId;
+      const active = activeIncomingTransfers[tId];
       active.chunks.push(data);
       const chunkSize = data.byteLength || data.size || (data.buffer ? data.buffer.byteLength : 0);
       active.receivedBytes += chunkSize;
       active.lastChunkTime = Date.now();
+
+      // Auto-finalize guard: if 100% of bytes received, schedule auto-finalize in case file-complete packet is dropped/delayed
+      if (active.receivedBytes >= active.meta.size && !active._autoFinalizeTimer && !active.finalized) {
+        active._autoFinalizeTimer = setTimeout(() => {
+          if (activeIncomingTransfers[tId] && !activeIncomingTransfers[tId].finalized) {
+            console.log('[LS:Transfer] Auto-finalizing fully received file:', active.meta.name);
+            finalizeReceivedFile(conn, tId);
+          }
+        }, 2500);
+      }
 
       const now = Date.now();
       const timeDiff = (now - active.lastSampleTime) / 1000;
