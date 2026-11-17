@@ -282,7 +282,7 @@
 
     if (conn.dataChannel) {
       try {
-        conn.dataChannel.bufferedAmountLowThreshold = 256 * 1024; // 256 KB
+        conn.dataChannel.bufferedAmountLowThreshold = cfg.BACKPRESSURE_LOW || (512 * 1024); // 512 KB
         conn.dataChannel.binaryType = 'arraybuffer';
       } catch (e) {}
     }
@@ -361,27 +361,25 @@
       while (blockOffset < blockBuffer.byteLength) {
         if (transferCancelled || !conn || !conn.open) break;
 
-        // Optimal SCTP backpressure control (prevents buffer bloat & CWND collapse)
+        // Optimal event-driven SCTP backpressure control (high-throughput pipeline)
         if (conn.dataChannel && conn.dataChannel.bufferedAmount > cfg.BACKPRESSURE_LIMIT) {
           await new Promise(resolve => {
-            const checkAndResolve = () => {
-              if (!conn.dataChannel || conn.dataChannel.bufferedAmount <= (cfg.BACKPRESSURE_LOW || 256 * 1024)) {
-                cleanup();
-                resolve();
-              }
-            };
-            const onLow = () => checkAndResolve();
-            const interval = setInterval(checkAndResolve, 10);
-            const cleanup = () => {
-              clearInterval(interval);
+            let done = false;
+            const resume = () => {
+              if (done) return;
+              done = true;
               if (conn.dataChannel) {
-                conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                conn.dataChannel.removeEventListener('bufferedamountlow', resume);
               }
+              resolve();
             };
-            if (conn.dataChannel) {
-              conn.dataChannel.addEventListener('bufferedamountlow', onLow);
+
+            if (!conn.dataChannel || conn.dataChannel.bufferedAmount <= (cfg.BACKPRESSURE_LOW || 512 * 1024)) {
+              return resolve();
             }
-            checkAndResolve();
+
+            conn.dataChannel.addEventListener('bufferedamountlow', resume, { once: true });
+            setTimeout(resume, 120);
           });
         }
 

@@ -47,23 +47,7 @@
         { urls: 'stun:stun.cloudflare.com:3478' },
         { urls: 'stun:global.stun.twilio.com:3478' },
         { urls: 'stun:stun.services.mozilla.com:3478' },
-        { urls: 'stun:stun.nextcloud.com:443' },
-        // High-speed UDP TURN fallback servers (without throttled TCP relay)
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turns:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun.nextcloud.com:443' }
       ];
 
       peer = new Peer(cfg.myPeerId, {
@@ -232,8 +216,19 @@
       if (conn.dataChannel) {
         try {
           conn.dataChannel.binaryType = 'arraybuffer';
-          conn.dataChannel.bufferedAmountLowThreshold = 256 * 1024;
+          conn.dataChannel.bufferedAmountLowThreshold = (cfg.BACKPRESSURE_LOW || 512 * 1024);
         } catch (e) {}
+      }
+
+      // Candidate pair inspection (log connection path: host LAN vs reflexive)
+      if (conn.peerConnection && conn.peerConnection.getStats) {
+        conn.peerConnection.getStats().then(stats => {
+          stats.forEach(report => {
+            if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated) {
+              console.log('[LS:P2P] Active ICE Candidate Pair established (Direct P2P)');
+            }
+          });
+        }).catch(() => {});
       }
 
       // Send identity packet to remote peer
