@@ -249,30 +249,31 @@
 
     fileCountBadge.textContent = `${sourceFiles.length} file${sourceFiles.length === 1 ? '' : 's'}`;
 
-    // Update 1-Click Multi-Save Action buttons in files toolbar
+    // Update 1-Click Multi-Save Action buttons in files toolbar (targets received files only)
     const btnSaveAllGallery = document.getElementById('btnSaveAllGallery');
     const btnSaveAllFolder = document.getElementById('btnSaveAllFolder');
     const btnDownloadZip = document.getElementById('btnDownloadZip');
     const isMobile = cfg.isIOS || cfg.isAndroid || cfg.isMobileDevice;
-    const hasFiles = sourceFiles.length > 0;
-    const mediaFiles = sourceFiles.filter(f => f.isImage || f.isVideo);
+    const receivedFiles = sourceFiles.filter(f => !f.isSent);
+    const hasReceivedFiles = receivedFiles.length > 0;
+    const receivedMediaFiles = receivedFiles.filter(f => f.isImage || f.isVideo);
 
     if (btnSaveAllGallery) {
-      btnSaveAllGallery.style.display = (isMobile && mediaFiles.length > 0) ? 'inline-flex' : 'none';
-      if (mediaFiles.length > 0) {
-        btnSaveAllGallery.innerHTML = `<span>📱</span> Save All to Gallery (${mediaFiles.length})`;
+      btnSaveAllGallery.style.display = (isMobile && receivedMediaFiles.length > 0) ? 'inline-flex' : 'none';
+      if (receivedMediaFiles.length > 0) {
+        btnSaveAllGallery.innerHTML = `<span>📱</span> Save Received to Gallery (${receivedMediaFiles.length})`;
       }
     }
     if (btnSaveAllFolder) {
-      btnSaveAllFolder.style.display = (!isMobile && hasFiles) ? 'inline-flex' : 'none';
-      if (hasFiles) {
-        btnSaveAllFolder.innerHTML = `<span>📂</span> Save All to Folder (${sourceFiles.length})`;
+      btnSaveAllFolder.style.display = (!isMobile && hasReceivedFiles) ? 'inline-flex' : 'none';
+      if (hasReceivedFiles) {
+        btnSaveAllFolder.innerHTML = `<span>📂</span> Save Received to Folder (${receivedFiles.length})`;
       }
     }
     if (btnDownloadZip) {
-      btnDownloadZip.style.display = hasFiles ? 'inline-flex' : 'none';
-      if (hasFiles) {
-        btnDownloadZip.innerHTML = `<span>📦</span> Download ZIP (${sourceFiles.length})`;
+      btnDownloadZip.style.display = hasReceivedFiles ? 'inline-flex' : 'none';
+      if (hasReceivedFiles) {
+        btnDownloadZip.innerHTML = `<span>📦</span> Download Received ZIP (${receivedFiles.length})`;
       }
     }
 
@@ -308,13 +309,17 @@
       }
 
       let mediaActionHtml = '';
-      if (isMedia && (cfg.isIOS || cfg.isAndroid)) {
+      if (isMedia && (cfg.isIOS || cfg.isAndroid) && !f.isSent) {
         mediaActionHtml = `
           <button class="btn-file-action btn-gallery" style="width:100%;" onclick="window.LS.transfer.saveToGallery('${safeName}')">
             <span>📱</span> Save to Gallery
           </button>
         `;
       }
+
+      const directionBadge = f.isSent
+        ? `<span style="color:var(--text-muted); font-size:0.7rem; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px;">↗ Sent</span>`
+        : `<span style="color:var(--accent); font-size:0.7rem; background:rgba(34,197,94,0.12); padding:1px 5px; border-radius:4px;">↙ Received</span>`;
 
       return `
         <div class="file-card" data-name="${safeName}">
@@ -325,6 +330,7 @@
             <div class="file-name" title="${safeName}">${safeName}</div>
             <div class="file-details">
               <span>${formatBytes(f.size)}</span>
+              ${directionBadge}
               <span>${timeAgo(f.mtime)}</span>
             </div>
           </div>

@@ -486,6 +486,7 @@
     deleteFile,
     findFile,
     getAllFiles: () => allFiles,
+    getReceivedFiles: () => allFiles.filter(f => !f.isSent),
     renderFiles,
     notifyDevicesChanged,
     handleUpload

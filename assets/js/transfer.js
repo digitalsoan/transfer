@@ -37,26 +37,28 @@
     if (!transferCompleteActions) return;
     const cfg = window.LS.config || {};
     const isMobile = cfg.isIOS || cfg.isAndroid || cfg.isMobileDevice;
-    const files = (window.LS.app && window.LS.app.getAllFiles) ? window.LS.app.getAllFiles() : [];
-    const count = totalCount || files.length;
-    const mediaFiles = files.filter(f => f.isImage || f.isVideo);
+    const allFiles = (window.LS.app && window.LS.app.getAllFiles) ? window.LS.app.getAllFiles() : [];
+    // Strictly target received files (excluding files sent by this device)
+    const receivedFiles = allFiles.filter(f => !f.isSent);
+    const count = totalCount || receivedFiles.length;
+    const mediaFiles = receivedFiles.filter(f => f.isImage || f.isVideo);
 
     if (btnQuickSaveGallery) {
       btnQuickSaveGallery.style.display = (isMobile && mediaFiles.length > 0) ? 'inline-flex' : 'none';
       if (mediaFiles.length > 0) {
-        btnQuickSaveGallery.innerHTML = `<span>📱</span> Save All to Gallery (${mediaFiles.length})`;
+        btnQuickSaveGallery.innerHTML = `<span>📱</span> Save Received to Gallery (${mediaFiles.length})`;
       }
     }
     if (btnQuickSavePC) {
       btnQuickSavePC.style.display = (!isMobile && count > 0) ? 'inline-flex' : 'none';
       if (count > 0) {
-        btnQuickSavePC.innerHTML = `<span>📂</span> Save All to PC Folder (${count})`;
+        btnQuickSavePC.innerHTML = `<span>📂</span> Save Received to PC Folder (${count})`;
       }
     }
     if (btnQuickDownloadZip) {
       btnQuickDownloadZip.style.display = count > 0 ? 'inline-flex' : 'none';
       if (count > 0) {
-        btnQuickDownloadZip.innerHTML = `<span>📦</span> Download All (${count} files ZIP)`;
+        btnQuickDownloadZip.innerHTML = `<span>📦</span> Download Received ZIP (${count})`;
       }
     }
 
@@ -196,17 +198,16 @@
     window.LS.ui.playChime();
     window.LS.ui.showToast('All files sent successfully!');
 
-    if (files.length > 1) {
-      if (progressBarFill) progressBarFill.style.width = '100%';
-      if (progressPercent) progressPercent.textContent = '100%';
-      if (progressEta) progressEta.textContent = `All ${files.length} files sent!`;
-      if (progressSpeed) progressSpeed.textContent = '0.0 MB/s';
-      showTransferCompleteActions(files.length);
-    } else {
-      setTimeout(() => {
-        if (!isTransferring && uploadCard) uploadCard.style.display = 'none';
-      }, 1500);
-    }
+    if (progressBarFill) progressBarFill.style.width = '100%';
+    if (progressPercent) progressPercent.textContent = '100%';
+    if (progressEta) progressEta.textContent = (files.length > 1) ? `All ${files.length} files sent!` : 'File sent!';
+    if (progressSpeed) progressSpeed.textContent = '0.0 MB/s';
+
+    // SENDER completed: Automatically close progress card after 1.5 seconds.
+    // Sender already holds original files on device, so do NOT show "Save All" actions here.
+    setTimeout(() => {
+      if (!isTransferring && uploadCard) uploadCard.style.display = 'none';
+    }, 1500);
   }
 
   // 2. Single Resumable File Stream Engine
@@ -509,7 +510,9 @@
       isAudio: ['mp3', 'm4a', 'wav', 'aac'].includes(ext),
       isDoc: true,
       blobUrl: objectUrl,
-      blobObj: blob
+      blobObj: blob,
+      isSent: false,
+      isReceived: true
     });
 
     window.LS.ui.playChime();
@@ -937,17 +940,31 @@
     }
   }
 
-  // 6. 1-Click Save All Photos/Videos to Mobile Gallery (iOS & Android)
+  // Helper to extract strictly received files (excluding files sent by this device)
+  function getReceivedFilesList(targetFiles) {
+    if (Array.isArray(targetFiles) && targetFiles.length > 0) {
+      const received = targetFiles.filter(f => !f.isSent);
+      return received.length > 0 ? received : targetFiles;
+    }
+    const all = (window.LS.app && window.LS.app.getAllFiles) ? window.LS.app.getAllFiles() : [];
+    const received = all.filter(f => !f.isSent);
+    // If received files exist, strictly return ONLY received files
+    if (received.length > 0) return received;
+    // Fallback to all only if zero received files exist
+    return all;
+  }
+
+  // 6. 1-Click Save Received Photos/Videos to Mobile Gallery (iOS & Android)
   async function saveAllToGallery(targetFiles) {
-    const allFiles = targetFiles || (window.LS.app && window.LS.app.getAllFiles ? window.LS.app.getAllFiles() : []);
-    const mediaFiles = allFiles.filter(f => f.isImage || f.isVideo || ['jpg', 'jpeg', 'png', 'heic', 'webp', 'gif', 'mov', 'mp4', 'm4v'].includes((f.name.split('.').pop() || '').toLowerCase()));
+    const candidateFiles = getReceivedFilesList(targetFiles);
+    const mediaFiles = candidateFiles.filter(f => f.isImage || f.isVideo || ['jpg', 'jpeg', 'png', 'heic', 'webp', 'gif', 'mov', 'mp4', 'm4v'].includes((f.name.split('.').pop() || '').toLowerCase()));
 
     if (mediaFiles.length === 0) {
-      window.LS.ui.showToast('No photos or videos to save to Gallery.');
+      window.LS.ui.showToast('No received photos or videos to save to Gallery.');
       return;
     }
 
-    window.LS.ui.showToast(`Preparing ${mediaFiles.length} photo/video${mediaFiles.length === 1 ? '' : 's'} for Gallery...`);
+    window.LS.ui.showToast(`Preparing ${mediaFiles.length} received photo/video${mediaFiles.length === 1 ? '' : 's'} for Gallery...`);
 
     const fileObjects = [];
     for (const item of mediaFiles) {
@@ -994,11 +1011,11 @@
     await downloadAllAsZip(mediaFiles);
   }
 
-  // 7. 1-Click Save All Files to PC Folder (File System Access API with ZIP fallback)
+  // 7. 1-Click Save Received Files to PC Folder (File System Access API with ZIP fallback)
   async function saveAllToFolder(targetFiles) {
-    const files = targetFiles || (window.LS.app && window.LS.app.getAllFiles ? window.LS.app.getAllFiles() : []);
+    const files = getReceivedFilesList(targetFiles);
     if (!files || files.length === 0) {
-      window.LS.ui.showToast('No files available to save.');
+      window.LS.ui.showToast('No received files available to save.');
       return;
     }
 
@@ -1007,7 +1024,7 @@
       try {
         window.LS.ui.showToast('Select destination folder on your PC...');
         const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        window.LS.ui.showToast(`Saving ${files.length} file${files.length === 1 ? '' : 's'} to folder...`);
+        window.LS.ui.showToast(`Saving ${files.length} received file${files.length === 1 ? '' : 's'} to folder...`);
 
         let savedCount = 0;
         for (const item of files) {
@@ -1024,7 +1041,7 @@
         }
 
         window.LS.ui.playChime();
-        window.LS.ui.showToast(`Saved ${savedCount} file${savedCount === 1 ? '' : 's'} directly to PC folder!`);
+        window.LS.ui.showToast(`Saved ${savedCount} received file${savedCount === 1 ? '' : 's'} directly to PC folder!`);
         return;
       } catch (err) {
         if (err.name === 'AbortError') return;
@@ -1033,19 +1050,19 @@
     }
 
     // Fallback for Safari, Firefox, or Mobile
-    window.LS.ui.showToast('Downloading all files in a single ZIP...');
+    window.LS.ui.showToast('Downloading received files in a single ZIP...');
     await downloadAllAsZip(files);
   }
 
-  // 8. 1-Click Download All Files as a single ZIP archive
+  // 8. 1-Click Download Received Files as a single ZIP archive
   async function downloadAllAsZip(targetFiles) {
-    const files = targetFiles || (window.LS.app && window.LS.app.getAllFiles ? window.LS.app.getAllFiles() : []);
+    const files = getReceivedFilesList(targetFiles);
     if (!files || files.length === 0) {
-      window.LS.ui.showToast('No files to package into ZIP.');
+      window.LS.ui.showToast('No received files to package into ZIP.');
       return;
     }
 
-    window.LS.ui.showToast(`Packaging ${files.length} file${files.length === 1 ? '' : 's'} into ZIP...`);
+    window.LS.ui.showToast(`Packaging ${files.length} received file${files.length === 1 ? '' : 's'} into ZIP...`);
 
     const fileEntries = [];
     for (const item of files) {
@@ -1065,7 +1082,7 @@
     try {
       const zipBlob = await createZipBlob(fileEntries);
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const zipName = `LocalShare_${dateStr}_(${fileEntries.length}_files).zip`;
+      const zipName = `LocalShare_Received_${dateStr}_(${fileEntries.length}_files).zip`;
 
       const a = document.createElement('a');
       a.href = URL.createObjectURL(zipBlob);
