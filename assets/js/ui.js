@@ -105,40 +105,56 @@
 
     if (!devicesGrid || !devicesCountBadge) return;
 
-    const activePeers = Object.values(peerConnections || {});
-    const discovered = Object.values(discoveredDevices || {});
+    // Safely retrieve peer connections and discovered devices from modules if not passed
+    const peersObj = peerConnections || (window.LS.p2p && window.LS.p2p.getPeerConnections ? window.LS.p2p.getPeerConnections() : {});
+    const discObj = discoveredDevices || (window.LS.discovery && window.LS.discovery.getDiscoveredDevices ? window.LS.discovery.getDiscoveredDevices() : {});
+
+    const activePeers = Object.values(peersObj || {});
+    const discovered = Object.values(discObj || {});
     const allRemote = [];
     const seenPeerIds = new Set();
 
     // 1. Discovered devices on same Wi-Fi
     discovered.forEach(d => {
-      if (!d.peerId) return;
+      if (!d || !d.peerId || d.peerId === cfg.myPeerId) return;
       seenPeerIds.add(d.peerId);
-      const hasP2p = !!(peerConnections[d.peerId] && peerConnections[d.peerId].conn && peerConnections[d.peerId].conn.open);
+      const connectedPeer = peersObj[d.peerId];
+      const hasP2p = !!(connectedPeer && connectedPeer.conn && connectedPeer.conn.open);
+      const name = (connectedPeer && connectedPeer.name) || d.name || 'Friend Device';
+      const os = (connectedPeer && connectedPeer.os) || d.os || 'Remote';
+      const type = (connectedPeer && connectedPeer.type) || d.type || 'mobile';
+      const icon = (connectedPeer && connectedPeer.icon) || d.icon || ((type === 'mobile' || os === 'iOS' || os === 'Android') ? '📱' : '💻');
+      const pin = d.pin || (connectedPeer && connectedPeer.pin) || (d.peerId ? d.peerId.replace('dsoan_', '') : '');
+
       allRemote.push({
-        id: d.id,
+        id: d.id || d.peerId,
         peerId: d.peerId,
-        name: d.name,
-        os: d.os,
-        type: d.type,
-        icon: d.icon || ((d.type === 'mobile' || d.os === 'iOS' || d.os === 'Android') ? '📱' : '💻'),
-        pin: d.pin,
+        name: name,
+        os: os,
+        type: type,
+        icon: icon,
+        pin: pin,
         isP2pReady: hasP2p,
         source: 'wifi'
       });
     });
 
-    // 2. Active peers joined via PIN / Invite link
+    // 2. Active peers joined via PIN / Invite link or WebRTC
     activePeers.forEach(p => {
-      if (!p.conn || !p.conn.open) return;
-      if (!seenPeerIds.has(p.conn.peer)) {
+      if (!p || !p.conn || !p.conn.open) return;
+      const remotePeerId = p.conn.peer;
+      if (!remotePeerId || remotePeerId === cfg.myPeerId) return;
+      if (!seenPeerIds.has(remotePeerId)) {
+        seenPeerIds.add(remotePeerId);
+        const pin = p.pin || (p.conn.metadata && p.conn.metadata.pin) || remotePeerId.replace('dsoan_', '');
         allRemote.push({
-          id: p.conn.peer,
-          peerId: p.conn.peer,
+          id: remotePeerId,
+          peerId: remotePeerId,
           name: p.name || 'Friend Device',
           os: p.os || 'Remote',
           type: p.type || 'mobile',
           icon: p.icon || ((p.type === 'mobile' || p.os === 'iOS' || p.os === 'Android') ? '📱' : '💻'),
+          pin: pin,
           isP2pReady: true,
           source: 'internet'
         });
@@ -186,7 +202,7 @@
       const safeName = sanitizeHtml(d.name);
 
       html += `
-        <div class="device-card other-device" data-peer="${d.peerId}">
+        <div class="device-card other-device" data-peer="${d.peerId}" onclick="window.LS.transfer.triggerSendToDevice('${d.peerId}')" style="cursor: pointer;" title="Click to send file to ${safeName}">
           <div class="device-icon-box">
             <span>${d.icon}</span>
             <span class="device-online-dot"></span>
@@ -197,10 +213,10 @@
               <span class="${tagClass}">${tagText}</span>
             </div>
             <div class="device-meta">
-              <span>${sanitizeHtml(d.os)}</span> • <span>${sourceLabel}</span>
+              ${d.pin ? `<span>PIN: ${sanitizeHtml(d.pin)}</span> • ` : ''}<span>${sanitizeHtml(d.os)}</span> • <span>${sourceLabel}</span>
             </div>
           </div>
-          <button class="btn-send-to-device" onclick="window.LS.transfer.triggerSendToDevice('${d.peerId}')">
+          <button class="btn-send-to-device" onclick="event.stopPropagation(); window.LS.transfer.triggerSendToDevice('${d.peerId}')">
             <span>📤</span> Send File
           </button>
         </div>

@@ -66,13 +66,22 @@
   }
 
   function notifyDevicesChanged() {
+    const cfg = window.LS.config;
     if (window.LS.ui && typeof window.LS.ui.renderDevicesList === 'function') {
-      window.LS.ui.renderDevicesList();
+      const disc = window.LS.discovery && window.LS.discovery.getDiscoveredDevices ? window.LS.discovery.getDiscoveredDevices() : {};
+      const peers = window.LS.p2p && window.LS.p2p.getPeerConnections ? window.LS.p2p.getPeerConnections() : {};
+      window.LS.ui.renderDevicesList(disc, peers);
     }
-    // Attempt auto-connect to newly discovered peers
-    if (window.LS.discovery && window.LS.discovery.discoveredDevices && window.LS.p2p) {
-      for (const devId in window.LS.discovery.discoveredDevices) {
-        window.LS.p2p.tryAutoConnectPeer(devId);
+    // Attempt auto-connect to newly discovered peers via correct peerId
+    if (window.LS.discovery && window.LS.p2p) {
+      const disc = window.LS.discovery.getDiscoveredDevices ? window.LS.discovery.getDiscoveredDevices() : window.LS.discovery.discoveredDevices;
+      if (disc) {
+        for (const devId in disc) {
+          const dev = disc[devId];
+          if (dev && dev.peerId && dev.peerId !== cfg.myPeerId) {
+            window.LS.p2p.tryAutoConnectPeer(dev.peerId);
+          }
+        }
       }
     }
   }

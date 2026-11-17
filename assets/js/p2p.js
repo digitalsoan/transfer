@@ -194,20 +194,22 @@
         pin: cfg.myShortPin
       }));
 
-      const discovered = window.LS.discovery.getDiscoveredDevices();
+      const discovered = window.LS.discovery && window.LS.discovery.getDiscoveredDevices ? window.LS.discovery.getDiscoveredDevices() : {};
       const disc = Object.values(discovered).find(d => d.peerId === conn.peer);
       const meta = conn.metadata || {};
       const friendName = (disc && disc.name) || meta.name || 'Remote Device';
       const friendOs = (disc && disc.os) || meta.os || 'Remote';
       const friendType = (disc && disc.type) || meta.type || 'mobile';
       const friendIcon = (disc && disc.icon) || meta.icon || (friendType === 'mobile' ? '📱' : '💻');
+      const friendPin = (disc && disc.pin) || meta.pin || (conn.peer ? conn.peer.replace('dsoan_', '') : '');
 
       peerConnections[conn.peer] = {
         conn,
         name: friendName,
         os: friendOs,
         type: friendType,
-        icon: friendIcon
+        icon: friendIcon,
+        pin: friendPin
       };
 
       window.LS.ui.showToast(`Connected to ${friendName}!`);
@@ -223,13 +225,15 @@
         try {
           const packet = JSON.parse(data);
           if (packet && packet.type === 'device-info') {
-            if (peerConnections[conn.peer]) {
-              peerConnections[conn.peer].name = packet.name || 'Friend Device';
-              peerConnections[conn.peer].os = packet.os || 'Remote';
-              peerConnections[conn.peer].type = packet.type || 'mobile';
-              peerConnections[conn.peer].icon = packet.icon || (packet.type === 'mobile' ? '📱' : '💻');
-              window.LS.app.notifyDevicesChanged();
+            if (!peerConnections[conn.peer]) {
+              peerConnections[conn.peer] = { conn };
             }
+            peerConnections[conn.peer].name = packet.name || peerConnections[conn.peer].name || 'Friend Device';
+            peerConnections[conn.peer].os = packet.os || peerConnections[conn.peer].os || 'Remote';
+            peerConnections[conn.peer].type = packet.type || peerConnections[conn.peer].type || 'mobile';
+            peerConnections[conn.peer].icon = packet.icon || peerConnections[conn.peer].icon || (packet.type === 'mobile' ? '📱' : '💻');
+            peerConnections[conn.peer].pin = packet.pin || peerConnections[conn.peer].pin || (conn.peer ? conn.peer.replace('dsoan_', '') : '');
+            window.LS.app.notifyDevicesChanged();
             return;
           }
         } catch (e) {}
@@ -362,6 +366,7 @@
     ensureSignalingAlive,
     waitForAutoReconnect,
     getPeerConnections,
+    getActiveConnections: getPeerConnections,
     isPeerConnected,
     hasActiveConnections,
     isReady
