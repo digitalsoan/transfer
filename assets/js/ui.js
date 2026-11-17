@@ -249,6 +249,33 @@
 
     fileCountBadge.textContent = `${sourceFiles.length} file${sourceFiles.length === 1 ? '' : 's'}`;
 
+    // Update 1-Click Multi-Save Action buttons in files toolbar
+    const btnSaveAllGallery = document.getElementById('btnSaveAllGallery');
+    const btnSaveAllFolder = document.getElementById('btnSaveAllFolder');
+    const btnDownloadZip = document.getElementById('btnDownloadZip');
+    const isMobile = cfg.isIOS || cfg.isAndroid || cfg.isMobileDevice;
+    const hasFiles = sourceFiles.length > 0;
+    const mediaFiles = sourceFiles.filter(f => f.isImage || f.isVideo);
+
+    if (btnSaveAllGallery) {
+      btnSaveAllGallery.style.display = (isMobile && mediaFiles.length > 0) ? 'inline-flex' : 'none';
+      if (mediaFiles.length > 0) {
+        btnSaveAllGallery.innerHTML = `<span>📱</span> Save All to Gallery (${mediaFiles.length})`;
+      }
+    }
+    if (btnSaveAllFolder) {
+      btnSaveAllFolder.style.display = (!isMobile && hasFiles) ? 'inline-flex' : 'none';
+      if (hasFiles) {
+        btnSaveAllFolder.innerHTML = `<span>📂</span> Save All to Folder (${sourceFiles.length})`;
+      }
+    }
+    if (btnDownloadZip) {
+      btnDownloadZip.style.display = hasFiles ? 'inline-flex' : 'none';
+      if (hasFiles) {
+        btnDownloadZip.innerHTML = `<span>📦</span> Download ZIP (${sourceFiles.length})`;
+      }
+    }
+
     if (filtered.length === 0) {
       fileGrid.innerHTML = '';
       emptyState.style.display = 'flex';

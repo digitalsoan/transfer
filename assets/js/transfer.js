@@ -28,6 +28,40 @@
   const progressEta = document.getElementById('progressEta');
   const progressWakeLockHint = document.getElementById('progressWakeLockHint');
   const btnResumeTransfer = document.getElementById('btnResumeTransfer');
+  const transferCompleteActions = document.getElementById('transferCompleteActions');
+  const btnQuickSaveGallery = document.getElementById('btnQuickSaveGallery');
+  const btnQuickSavePC = document.getElementById('btnQuickSavePC');
+  const btnQuickDownloadZip = document.getElementById('btnQuickDownloadZip');
+
+  function showTransferCompleteActions(totalCount = 0) {
+    if (!transferCompleteActions) return;
+    const cfg = window.LS.config || {};
+    const isMobile = cfg.isIOS || cfg.isAndroid || cfg.isMobileDevice;
+    const files = (window.LS.app && window.LS.app.getAllFiles) ? window.LS.app.getAllFiles() : [];
+    const count = totalCount || files.length;
+    const mediaFiles = files.filter(f => f.isImage || f.isVideo);
+
+    if (btnQuickSaveGallery) {
+      btnQuickSaveGallery.style.display = (isMobile && mediaFiles.length > 0) ? 'inline-flex' : 'none';
+      if (mediaFiles.length > 0) {
+        btnQuickSaveGallery.innerHTML = `<span>📱</span> Save All to Gallery (${mediaFiles.length})`;
+      }
+    }
+    if (btnQuickSavePC) {
+      btnQuickSavePC.style.display = (!isMobile && count > 0) ? 'inline-flex' : 'none';
+      if (count > 0) {
+        btnQuickSavePC.innerHTML = `<span>📂</span> Save All to PC Folder (${count})`;
+      }
+    }
+    if (btnQuickDownloadZip) {
+      btnQuickDownloadZip.style.display = count > 0 ? 'inline-flex' : 'none';
+      if (count > 0) {
+        btnQuickDownloadZip.innerHTML = `<span>📦</span> Download All (${count} files ZIP)`;
+      }
+    }
+
+    transferCompleteActions.style.display = 'flex';
+  }
 
   function isCancelled() {
     return transferCancelled;
@@ -87,6 +121,7 @@
 
     transferCancelled = false;
     isTransferring = true;
+    if (transferCompleteActions) transferCompleteActions.style.display = 'none';
     await window.LS.power.acquireWakeLock();
     window.LS.power.startSilentAudio();
     if (uploadCard) uploadCard.style.display = 'flex';
@@ -147,19 +182,31 @@
     if (transferCancelled) {
       if (uploadCard) uploadCard.style.display = 'none';
       if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+      if (transferCompleteActions) transferCompleteActions.style.display = 'none';
       isTransferring = false;
       window.LS.power.releaseWakeLock();
       window.LS.power.stopSilentAudio();
       return;
     }
 
-    if (uploadCard) uploadCard.style.display = 'none';
     if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
     isTransferring = false;
     window.LS.power.releaseWakeLock();
     window.LS.power.stopSilentAudio();
     window.LS.ui.playChime();
     window.LS.ui.showToast('All files sent successfully!');
+
+    if (files.length > 1) {
+      if (progressBarFill) progressBarFill.style.width = '100%';
+      if (progressPercent) progressPercent.textContent = '100%';
+      if (progressEta) progressEta.textContent = `All ${files.length} files sent!`;
+      if (progressSpeed) progressSpeed.textContent = '0.0 MB/s';
+      showTransferCompleteActions(files.length);
+    } else {
+      setTimeout(() => {
+        if (!isTransferring && uploadCard) uploadCard.style.display = 'none';
+      }, 1500);
+    }
   }
 
   // 2. Single Resumable File Stream Engine
@@ -496,12 +543,18 @@
     if (isLastFile) {
       if (progressBarFill) progressBarFill.style.width = '100%';
       if (progressPercent) progressPercent.textContent = '100%';
-      if (progressEta) progressEta.textContent = 'All files received!';
-      setTimeout(() => {
-        if (uploadCard) uploadCard.style.display = 'none';
-        if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
-        window.LS.power.releaseWakeLock();
-      }, 1500);
+      if (progressEta) progressEta.textContent = (tFiles > 1) ? `All ${tFiles} files received!` : 'File received!';
+      if (progressSpeed) progressSpeed.textContent = '0.0 MB/s';
+      if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
+      window.LS.power.releaseWakeLock();
+
+      if (tFiles > 1) {
+        showTransferCompleteActions(tFiles);
+      } else {
+        setTimeout(() => {
+          if (!isTransferring && uploadCard) uploadCard.style.display = 'none';
+        }, 1800);
+      }
     } else {
       if (progressBarFill) progressBarFill.style.width = '100%';
       if (progressPercent) progressPercent.textContent = '100%';
@@ -547,6 +600,9 @@
       if (packet && packet.type === 'file-meta') {
         const tId = packet.transferId || (packet.name + '_' + packet.size);
         incomingTransferId = tId;
+        if (packet.currentIdx === 1 || !packet.currentIdx) {
+          if (transferCompleteActions) transferCompleteActions.style.display = 'none';
+        }
 
         if (!activeIncomingTransfers[tId] || packet.startOffset === 0) {
           activeIncomingTransfers[tId] = {
@@ -688,9 +744,141 @@
     if (uploadCard) uploadCard.style.display = 'none';
     if (progressWakeLockHint) progressWakeLockHint.style.display = 'none';
     if (btnResumeTransfer) btnResumeTransfer.style.display = 'none';
+    if (transferCompleteActions) transferCompleteActions.style.display = 'none';
   }
 
-  // 5. Save To Gallery (Web Share API for iOS & Android)
+  // Precomputed CRC-32 table for zero-dependency ZIP generation
+  const crcTable = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    crcTable[i] = c >>> 0;
+  }
+
+  async function calculateBlobCrc32(blob) {
+    let crc = 0xFFFFFFFF;
+    try {
+      if (typeof blob.stream === 'function') {
+        const reader = blob.stream().getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          for (let i = 0; i < value.length; i++) {
+            crc = (crc >>> 8) ^ crcTable[(crc ^ value[i]) & 0xFF];
+          }
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+      }
+    } catch (e) {}
+
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    for (let i = 0; i < buf.length; i++) {
+      crc = (crc >>> 8) ^ crcTable[(crc ^ buf[i]) & 0xFF];
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // Pure Client-side ZIP Blob Generator (Zero external dependencies)
+  async function createZipBlob(fileEntries) {
+    const enc = new TextEncoder();
+    const d = new Date();
+    const dosTime = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF;
+    const dosDate = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+
+    const parts = [];
+    const centralParts = [];
+    let offset = 0;
+
+    for (const entry of fileEntries) {
+      const name = entry.name || 'file';
+      const blob = entry.blob;
+      const nameBytes = enc.encode(name);
+      const size = blob.size;
+      const crc = await calculateBlobCrc32(blob);
+
+      // Local file header (30 bytes + name length)
+      const localHeader = new Uint8Array(30 + nameBytes.length);
+      const lv = new DataView(localHeader.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);
+      lv.setUint16(6, 0x0800, true); // UTF-8 filename flag
+      lv.setUint16(8, 0, true); // Stored (no compression)
+      lv.setUint16(10, dosTime, true);
+      lv.setUint16(12, dosDate, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, size, true);
+      lv.setUint32(22, size, true);
+      lv.setUint16(26, nameBytes.length, true);
+      lv.setUint16(28, 0, true);
+      localHeader.set(nameBytes, 30);
+
+      parts.push(localHeader);
+      parts.push(blob);
+
+      // Central directory header (46 bytes + name length)
+      const cdHeader = new Uint8Array(46 + nameBytes.length);
+      const cv = new DataView(cdHeader.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true); // UTF-8
+      cv.setUint16(10, 0, true);
+      cv.setUint16(12, dosTime, true);
+      cv.setUint16(14, dosDate, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, size, true);
+      cv.setUint32(24, size, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint16(30, 0, true);
+      cv.setUint16(32, 0, true);
+      cv.setUint16(34, 0, true);
+      cv.setUint16(36, 0, true);
+      cv.setUint32(38, 0, true);
+      cv.setUint32(42, offset, true);
+      cdHeader.set(nameBytes, 46);
+
+      centralParts.push(cdHeader);
+      offset += localHeader.length + size;
+    }
+
+    const cdOffset = offset;
+    let cdSize = 0;
+    for (const c of centralParts) cdSize += c.length;
+
+    // End of central directory record (22 bytes)
+    const eocd = new Uint8Array(22);
+    const ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(4, 0, true);
+    ev.setUint16(6, 0, true);
+    ev.setUint16(8, fileEntries.length, true);
+    ev.setUint16(10, fileEntries.length, true);
+    ev.setUint32(12, cdSize, true);
+    ev.setUint32(16, cdOffset, true);
+    ev.setUint16(20, 0, true);
+
+    return new Blob([...parts, ...centralParts, eocd], { type: 'application/zip' });
+  }
+
+  // Resolve file object/blob from local store or server preview
+  async function resolveFileBlob(fileItem) {
+    if (!fileItem) throw new Error('File item is null');
+    if (fileItem.blobObj instanceof Blob) return fileItem.blobObj;
+    if (fileItem.blobUrl) {
+      try {
+        const res = await fetch(fileItem.blobUrl);
+        if (res.ok) return await res.blob();
+      } catch (e) {}
+    }
+    const previewUrl = `/api/preview?file=${encodeURIComponent(fileItem.name)}`;
+    const res = await fetch(previewUrl);
+    if (!res.ok) throw new Error(`Failed to load ${fileItem.name}`);
+    return await res.blob();
+  }
+
+  // 5. Save Single File To Gallery (Web Share API for iOS & Android)
   async function saveToGallery(fileName) {
     window.LS.ui.showToast('Preparing for Photos Gallery...');
     let blob = null;
@@ -719,6 +907,8 @@
       else if (ext === 'png') mime = 'image/png';
       else if (ext === 'mov') mime = 'video/quicktime';
       else if (ext === 'mp4') mime = 'video/mp4';
+      else if (ext === 'heic') mime = 'image/heic';
+      else if (ext === 'webp') mime = 'image/webp';
     }
 
     try {
@@ -744,6 +934,151 @@
         a.download = fileName;
         a.click();
       }
+    }
+  }
+
+  // 6. 1-Click Save All Photos/Videos to Mobile Gallery (iOS & Android)
+  async function saveAllToGallery(targetFiles) {
+    const allFiles = targetFiles || (window.LS.app && window.LS.app.getAllFiles ? window.LS.app.getAllFiles() : []);
+    const mediaFiles = allFiles.filter(f => f.isImage || f.isVideo || ['jpg', 'jpeg', 'png', 'heic', 'webp', 'gif', 'mov', 'mp4', 'm4v'].includes((f.name.split('.').pop() || '').toLowerCase()));
+
+    if (mediaFiles.length === 0) {
+      window.LS.ui.showToast('No photos or videos to save to Gallery.');
+      return;
+    }
+
+    window.LS.ui.showToast(`Preparing ${mediaFiles.length} photo/video${mediaFiles.length === 1 ? '' : 's'} for Gallery...`);
+
+    const fileObjects = [];
+    for (const item of mediaFiles) {
+      try {
+        const blob = await resolveFileBlob(item);
+        const ext = (item.name.split('.').pop() || '').toLowerCase();
+        let mime = item.mime || blob.type;
+        if (!mime || mime === 'application/octet-stream') {
+          if (['jpg', 'jpeg'].includes(ext)) mime = 'image/jpeg';
+          else if (ext === 'png') mime = 'image/png';
+          else if (ext === 'heic') mime = 'image/heic';
+          else if (ext === 'webp') mime = 'image/webp';
+          else if (ext === 'mov') mime = 'video/quicktime';
+          else if (ext === 'mp4') mime = 'video/mp4';
+        }
+        fileObjects.push(new File([blob], item.name, { type: mime }));
+      } catch (err) {
+        console.warn('[LS:Transfer] Failed to prepare file for Gallery:', item.name, err);
+      }
+    }
+
+    if (fileObjects.length === 0) {
+      window.LS.ui.showToast('Could not load media files for Gallery.');
+      return;
+    }
+
+    // Try multi-file Web Share API
+    if (navigator.canShare && navigator.canShare({ files: fileObjects })) {
+      try {
+        await navigator.share({
+          files: fileObjects,
+          title: `Save ${fileObjects.length} Photos & Videos`
+        });
+        window.LS.ui.showToast('Tap "Save Images / Videos" in the share sheet!');
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.warn('[LS:Transfer] Multi-share error, falling back:', err);
+      }
+    }
+
+    // If multi-share unsupported, download ZIP
+    window.LS.ui.showToast('Direct gallery save unavailable on this browser. Downloading ZIP...');
+    await downloadAllAsZip(mediaFiles);
+  }
+
+  // 7. 1-Click Save All Files to PC Folder (File System Access API with ZIP fallback)
+  async function saveAllToFolder(targetFiles) {
+    const files = targetFiles || (window.LS.app && window.LS.app.getAllFiles ? window.LS.app.getAllFiles() : []);
+    if (!files || files.length === 0) {
+      window.LS.ui.showToast('No files available to save.');
+      return;
+    }
+
+    // Check if File System Access API is supported (Desktop Chrome, Edge, Brave, Opera)
+    if ('showDirectoryPicker' in window) {
+      try {
+        window.LS.ui.showToast('Select destination folder on your PC...');
+        const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        window.LS.ui.showToast(`Saving ${files.length} file${files.length === 1 ? '' : 's'} to folder...`);
+
+        let savedCount = 0;
+        for (const item of files) {
+          try {
+            const blob = await resolveFileBlob(item);
+            const fileHandle = await dirHandle.getFileHandle(item.name, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            savedCount++;
+          } catch (fileErr) {
+            console.warn('[LS:Transfer] Error saving file to directory:', item.name, fileErr);
+          }
+        }
+
+        window.LS.ui.playChime();
+        window.LS.ui.showToast(`Saved ${savedCount} file${savedCount === 1 ? '' : 's'} directly to PC folder!`);
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.warn('[LS:Transfer] Directory picker error, falling back to ZIP:', err);
+      }
+    }
+
+    // Fallback for Safari, Firefox, or Mobile
+    window.LS.ui.showToast('Downloading all files in a single ZIP...');
+    await downloadAllAsZip(files);
+  }
+
+  // 8. 1-Click Download All Files as a single ZIP archive
+  async function downloadAllAsZip(targetFiles) {
+    const files = targetFiles || (window.LS.app && window.LS.app.getAllFiles ? window.LS.app.getAllFiles() : []);
+    if (!files || files.length === 0) {
+      window.LS.ui.showToast('No files to package into ZIP.');
+      return;
+    }
+
+    window.LS.ui.showToast(`Packaging ${files.length} file${files.length === 1 ? '' : 's'} into ZIP...`);
+
+    const fileEntries = [];
+    for (const item of files) {
+      try {
+        const blob = await resolveFileBlob(item);
+        fileEntries.push({ name: item.name, blob });
+      } catch (e) {
+        console.warn('[LS:Transfer] Failed to resolve file for zip:', item.name, e);
+      }
+    }
+
+    if (fileEntries.length === 0) {
+      window.LS.ui.showToast('Failed to prepare files for ZIP.');
+      return;
+    }
+
+    try {
+      const zipBlob = await createZipBlob(fileEntries);
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const zipName = `LocalShare_${dateStr}_(${fileEntries.length}_files).zip`;
+
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = zipName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      window.LS.ui.playChime();
+      window.LS.ui.showToast(`Downloaded ${zipName}!`);
+    } catch (zipErr) {
+      console.error('[LS:Transfer] ZIP creation failed:', zipErr);
+      window.LS.ui.showToast('Failed to create ZIP archive.');
     }
   }
 
@@ -778,6 +1113,9 @@
     cancelCurrentTransfer,
     attemptAutoResume,
     saveToGallery,
+    saveAllToGallery,
+    saveAllToFolder,
+    downloadAllAsZip,
     isCancelled,
     getSession
   };

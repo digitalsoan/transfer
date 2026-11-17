@@ -297,6 +297,59 @@
       btnOpenFolder.addEventListener('click', () => localApi.openFolder());
     }
 
+    // 1-Click Multi-Save Actions (Mobile Gallery & PC Folder)
+    const btnSaveAllGallery = document.getElementById('btnSaveAllGallery');
+    if (btnSaveAllGallery) {
+      btnSaveAllGallery.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.saveAllToGallery();
+      });
+    }
+
+    const btnSaveAllFolder = document.getElementById('btnSaveAllFolder');
+    if (btnSaveAllFolder) {
+      btnSaveAllFolder.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.saveAllToFolder();
+      });
+    }
+
+    const btnDownloadZip = document.getElementById('btnDownloadZip');
+    if (btnDownloadZip) {
+      btnDownloadZip.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.downloadAllAsZip();
+      });
+    }
+
+    const btnQuickSaveGallery = document.getElementById('btnQuickSaveGallery');
+    if (btnQuickSaveGallery) {
+      btnQuickSaveGallery.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.saveAllToGallery();
+      });
+    }
+
+    const btnQuickSavePC = document.getElementById('btnQuickSavePC');
+    if (btnQuickSavePC) {
+      btnQuickSavePC.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.saveAllToFolder();
+      });
+    }
+
+    const btnQuickDownloadZip = document.getElementById('btnQuickDownloadZip');
+    if (btnQuickDownloadZip) {
+      btnQuickDownloadZip.addEventListener('click', () => {
+        if (window.LS.transfer) window.LS.transfer.downloadAllAsZip();
+      });
+    }
+
+    const btnQuickDismiss = document.getElementById('btnQuickDismiss');
+    if (btnQuickDismiss) {
+      btnQuickDismiss.addEventListener('click', () => {
+        const transferCompleteActions = document.getElementById('transferCompleteActions');
+        const uploadCard = document.getElementById('uploadCard');
+        if (transferCompleteActions) transferCompleteActions.style.display = 'none';
+        if (uploadCard) uploadCard.style.display = 'none';
+      });
+    }
+
     // Preview modal events
     const btnClosePreview = document.getElementById('btnClosePreview');
     const previewModal = document.getElementById('previewModal');
@@ -432,6 +485,7 @@
     addReceivedFile,
     deleteFile,
     findFile,
+    getAllFiles: () => allFiles,
     renderFiles,
     notifyDevicesChanged,
     handleUpload
