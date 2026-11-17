@@ -119,7 +119,7 @@
       if (!d || !d.peerId || d.peerId === cfg.myPeerId) return;
       seenPeerIds.add(d.peerId);
       const connectedPeer = peersObj[d.peerId];
-      const hasP2p = !!(connectedPeer && connectedPeer.conn && connectedPeer.conn.open);
+      const hasP2p = !!(connectedPeer && connectedPeer.conn && (connectedPeer.conn.open || (connectedPeer.conn.dataChannel && connectedPeer.conn.dataChannel.readyState === 'open')));
       const name = (connectedPeer && connectedPeer.name) || d.name || 'Friend Device';
       const os = (connectedPeer && connectedPeer.os) || d.os || 'Remote';
       const type = (connectedPeer && connectedPeer.type) || d.type || 'mobile';
@@ -141,7 +141,9 @@
 
     // 2. Active peers joined via PIN / Invite link or WebRTC
     activePeers.forEach(p => {
-      if (!p || !p.conn || !p.conn.open) return;
+      if (!p || !p.conn) return;
+      const isOpen = !!(p.conn.open || (p.conn.dataChannel && p.conn.dataChannel.readyState === 'open'));
+      if (!isOpen) return;
       const remotePeerId = p.conn.peer;
       if (!remotePeerId || remotePeerId === cfg.myPeerId) return;
       if (!seenPeerIds.has(remotePeerId)) {

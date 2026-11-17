@@ -9,23 +9,27 @@
   window.LS = window.LS || {};
 
   let peer = null;
-  const peerConnections = {}; // peerId -> { conn, name, os, type, icon }
+  const peerConnections = {}; // peerId -> { conn, name, os, type, icon, pin }
   const lastP2pAttempt = {};
+  const activeConnectPromises = {}; // peerId -> Promise
 
   function getPeerConnections() {
     return peerConnections;
   }
 
   function isPeerConnected(peerId) {
-    return !!(peerConnections[peerId] && peerConnections[peerId].conn && peerConnections[peerId].conn.open);
+    const p = peerConnections[peerId];
+    if (!p || !p.conn) return false;
+    const dc = p.conn.dataChannel;
+    return !!(p.conn.open || (dc && dc.readyState === 'open'));
   }
 
   function isReady() {
-    return !!(peer && peer.open);
+    return !!(peer && !peer.destroyed && !peer.disconnected && peer.open);
   }
 
   function hasActiveConnections() {
-    return Object.values(peerConnections).some(p => p.conn && p.conn.open);
+    return Object.values(peerConnections).some(p => p.conn && (p.conn.open || (p.conn.dataChannel && p.conn.dataChannel.readyState === 'open')));
   }
 
   // 1. PeerJS Lifecycle
@@ -94,6 +98,13 @@
       });
 
       peer.on('connection', (conn) => {
+        console.log('[LS:P2P] Incoming connection from peer:', conn.peer);
+        const existing = peerConnections[conn.peer];
+        if (existing && existing.conn && (existing.conn.open || (existing.conn.dataChannel && existing.conn.dataChannel.readyState === 'open'))) {
+          console.log('[LS:P2P] Already have open connection with peer:', conn.peer, '- ignoring duplicate');
+          try { conn.close(); } catch (e) {}
+          return;
+        }
         setupConnectionEvents(conn);
       });
 
@@ -115,23 +126,27 @@
 
   // 2. Outgoing WebRTC Connection
   function connectToPeer(targetPeerId, isManual = false) {
-    if (!targetPeerId) return;
+    if (!targetPeerId) return Promise.resolve(null);
     const cfg = window.LS.config;
 
     if (!peer || !peer.open) {
       if (isManual) window.LS.ui.showToast("Waking connection engine... retrying in 2 seconds");
       ensureSignalingAlive();
       setTimeout(() => connectToPeer(targetPeerId, isManual), 1500);
-      return;
+      return Promise.resolve(null);
     }
 
     if (targetPeerId === cfg.myPeerId) {
       if (isManual) window.LS.ui.showToast("Cannot connect to your own device PIN!");
-      return;
+      return Promise.resolve(null);
     }
     if (isPeerConnected(targetPeerId)) {
       if (isManual) window.LS.ui.showToast("Already connected!");
-      return;
+      return Promise.resolve(peerConnections[targetPeerId]?.conn || null);
+    }
+
+    if (activeConnectPromises[targetPeerId]) {
+      return activeConnectPromises[targetPeerId];
     }
 
     const pinDigits = targetPeerId.replace('dsoan_', '');
@@ -152,13 +167,40 @@
 
     setupConnectionEvents(conn);
 
+    activeConnectPromises[targetPeerId] = new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        delete activeConnectPromises[targetPeerId];
+        resolve(null);
+      }, 8000);
+
+      conn.on('open', () => {
+        clearTimeout(timeout);
+        delete activeConnectPromises[targetPeerId];
+        resolve(conn);
+      });
+
+      conn.on('close', () => {
+        clearTimeout(timeout);
+        delete activeConnectPromises[targetPeerId];
+        resolve(null);
+      });
+
+      conn.on('error', () => {
+        clearTimeout(timeout);
+        delete activeConnectPromises[targetPeerId];
+        resolve(null);
+      });
+    });
+
     if (isManual) {
-      setTimeout(() => {
-        if (!isPeerConnected(targetPeerId)) {
+      activeConnectPromises[targetPeerId].then(connectedConn => {
+        if (!connectedConn && !isPeerConnected(targetPeerId)) {
           window.LS.ui.showToast(`Still connecting to PIN ${pinDigits}... Ensure your friend is online at transfer.digitalsoan.com`);
         }
-      }, 10000);
+      });
     }
+
+    return activeConnectPromises[targetPeerId];
   }
 
   // 3. Auto-Pairing Throttle
@@ -166,10 +208,11 @@
     const cfg = window.LS.config;
     if (!peer || !peer.open || !targetPeerId || targetPeerId === cfg.myPeerId) return;
     if (isPeerConnected(targetPeerId)) return;
+    if (activeConnectPromises[targetPeerId]) return;
 
     const now = Date.now();
     const lastAttempt = lastP2pAttempt[targetPeerId] || 0;
-    const minInterval = isHighPriority ? 1200 : 3500;
+    const minInterval = isHighPriority ? 1200 : 4000;
     if (now - lastAttempt < minInterval) return;
 
     lastP2pAttempt[targetPeerId] = now;
@@ -245,88 +288,80 @@
 
     conn.on('close', () => {
       console.log('[LS:P2P] WebRTC DataChannel closed for peer:', conn.peer);
-      delete peerConnections[conn.peer];
-      window.LS.app.notifyDevicesChanged();
-      window.LS.transfer.handleConnectionClosed(conn.peer);
+      if (peerConnections[conn.peer] && peerConnections[conn.peer].conn === conn) {
+        delete peerConnections[conn.peer];
+        window.LS.app.notifyDevicesChanged();
+        window.LS.transfer.handleConnectionClosed(conn.peer);
+      }
     });
 
     conn.on('error', (err) => {
       console.warn('[LS:P2P] WebRTC connection error:', err);
-      delete peerConnections[conn.peer];
-      window.LS.app.notifyDevicesChanged();
+      if (peerConnections[conn.peer] && peerConnections[conn.peer].conn === conn) {
+        delete peerConnections[conn.peer];
+        window.LS.app.notifyDevicesChanged();
+      }
     });
   }
 
-  // 5. Signaling Revival (revives dead PeerJS & MQTT sockets after long sleep)
+  // 5. Signaling Revival (revives dead PeerJS & MQTT sockets without destroying active sessions)
   function ensureSignalingAlive() {
-    const isPeerDead = !peer || peer.destroyed || peer.disconnected || !peer.open ||
-      (!peer.socket || !peer.socket._ws || peer.socket._ws.readyState !== 1);
-
-    if (isPeerDead) {
-      console.log('[LS:P2P] Re-initializing dead PeerJS signaling socket');
-      try { if (peer) peer.destroy(); } catch (e) {}
+    if (!peer || peer.destroyed) {
+      console.log('[LS:P2P] Peer was destroyed or null, re-initializing');
       peer = null;
       initPeer();
+      return;
     }
 
-    if (!window.LS.discovery.isConnected()) {
+    if (peer.disconnected) {
+      console.log('[LS:P2P] Peer disconnected from signaling server, reconnecting...');
+      try {
+        peer.reconnect();
+      } catch (e) {
+        console.warn('[LS:P2P] peer.reconnect() error:', e);
+      }
+    }
+
+    if (window.LS.discovery && !window.LS.discovery.isConnected()) {
       console.log('[LS:P2P] Reconnecting dead MQTT discovery client');
       window.LS.discovery.startNetworkDiscovery();
     }
   }
 
   // 6. Resilient Auto-Reconnect Engine
-  async function waitForAutoReconnect(targetPeerId, maxWaitSec = 20) {
-    const cfg = window.LS.config;
+  async function waitForAutoReconnect(targetPeerId, maxWaitSec = 8) {
+    if (!targetPeerId) return null;
     console.log('[LS:P2P] waitForAutoReconnect starting for peer:', targetPeerId);
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWaitSec * 1000) {
-      if (window.LS.transfer.isCancelled()) return null;
-
-      ensureSignalingAlive();
+      if (window.LS.transfer && window.LS.transfer.isCancelled && window.LS.transfer.isCancelled()) return null;
 
       const existing = peerConnections[targetPeerId];
-      if (existing && existing.conn && existing.conn.open && existing.conn.dataChannel && existing.conn.dataChannel.readyState === 'open') {
+      if (existing && existing.conn && (existing.conn.open || (existing.conn.dataChannel && existing.conn.dataChannel.readyState === 'open'))) {
         return existing.conn;
       }
 
-      if (peer && peer.open && (!existing || !existing.conn || !existing.conn.open)) {
-        try {
-          const newConn = peer.connect(targetPeerId, {
-            serialization: 'raw',
-            reliable: true,
-            metadata: {
-              name: cfg.myDeviceName,
-              os: cfg.myDeviceOs,
-              type: cfg.myDeviceType,
-              icon: cfg.myDeviceIcon,
-              pin: cfg.myShortPin
-            }
-          });
-          setupConnectionEvents(newConn);
+      ensureSignalingAlive();
 
-          const opened = await new Promise(resolve => {
-            const to = setTimeout(() => resolve(false), 3000);
-            newConn.on('open', () => {
-              clearTimeout(to);
-              resolve(true);
-            });
-            newConn.on('error', () => {
-              clearTimeout(to);
-              resolve(false);
-            });
-          });
-
-          if (opened && newConn.open && newConn.dataChannel && newConn.dataChannel.readyState === 'open') {
-            return newConn;
+      if (peer && peer.open && !isPeerConnected(targetPeerId)) {
+        if (!activeConnectPromises[targetPeerId]) {
+          connectToPeer(targetPeerId, false);
+        }
+        if (activeConnectPromises[targetPeerId]) {
+          const res = await activeConnectPromises[targetPeerId];
+          if (res && (res.open || (res.dataChannel && res.dataChannel.readyState === 'open'))) {
+            return res;
           }
-        } catch (e) {
-          console.warn('[LS:P2P] Auto-reconnect attempt error:', e);
         }
       }
 
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 600));
+    }
+
+    const finalConn = peerConnections[targetPeerId];
+    if (finalConn && finalConn.conn && (finalConn.conn.open || (finalConn.conn.dataChannel && finalConn.conn.dataChannel.readyState === 'open'))) {
+      return finalConn.conn;
     }
     return null;
   }

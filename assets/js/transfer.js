@@ -61,20 +61,21 @@
     let targets = [];
     const peerConnections = window.LS.p2p.getPeerConnections();
 
-    if (targetId && peerConnections[targetId] && peerConnections[targetId].conn && peerConnections[targetId].conn.open) {
+    if (targetId && peerConnections[targetId] && peerConnections[targetId].conn && (peerConnections[targetId].conn.open || (peerConnections[targetId].conn.dataChannel && peerConnections[targetId].conn.dataChannel.readyState === 'open'))) {
       targets = [peerConnections[targetId]];
     } else {
-      targets = Object.values(peerConnections).filter(p => p.conn && p.conn.open);
+      targets = Object.values(peerConnections).filter(p => p.conn && (p.conn.open || (p.conn.dataChannel && p.conn.dataChannel.readyState === 'open')));
     }
 
     if (targets.length === 0) {
-      const fallbackPeerId = targetId || Object.values(window.LS.discovery.getDiscoveredDevices())[0]?.peerId;
+      const discovered = window.LS.discovery ? window.LS.discovery.getDiscoveredDevices() : {};
+      const fallbackPeerId = targetId || Object.values(discovered)[0]?.peerId;
       if (fallbackPeerId && window.LS.p2p.isReady()) {
         window.LS.ui.showToast("Connecting to friend device...");
-        window.LS.p2p.tryAutoConnectPeer(fallbackPeerId, true);
         const reconnectedConn = await window.LS.p2p.waitForAutoReconnect(fallbackPeerId, 8);
-        if (reconnectedConn && reconnectedConn.open) {
-          targets = [peerConnections[fallbackPeerId] || { conn: reconnectedConn }];
+        if (reconnectedConn && (reconnectedConn.open || (reconnectedConn.dataChannel && reconnectedConn.dataChannel.readyState === 'open'))) {
+          const freshPeers = window.LS.p2p.getPeerConnections();
+          targets = [freshPeers[fallbackPeerId] || { conn: reconnectedConn }];
         }
       }
     }
